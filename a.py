@@ -475,7 +475,7 @@ def find_best_product(query: str) -> dict:
     print(f"    Why:       {winner.get('why', 'N/A')}")
     print(f"    Caveats:   {winner.get('caveats', 'N/A')}")
     print(f"    Confidence:{winner.get('confidence', 'N/A')}")
-    print(f"\n  Full ranking:")
+    print(f"\n  Full  ranking:")
     for r in ranked:
         print(f"    #{r.get('rank','?')} {r.get('name','?')} — {r.get('score','?')}/100")
 
