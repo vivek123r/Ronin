@@ -447,6 +447,194 @@ function RappelSpider() {
   )
 }
 
+/* ── Full-viewport animated web network backdrop ─────────────────────── */
+function WebNetworkBackground() {
+  const canvasRef = useRef(null)
+  const frameRef = useRef(null)
+  const timeRef = useRef(0)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight }
+    resize()
+    window.addEventListener('resize', resize)
+
+    // Define fixed nodes relative to canvas size (as fractions)
+    const NODE_DEFS = [
+      // centre-ish cluster
+      { fx:0.50, fy:0.45 }, // 0 — core
+      // ring 1
+      { fx:0.50, fy:0.20 }, // 1
+      { fx:0.72, fy:0.32 }, // 2
+      { fx:0.72, fy:0.58 }, // 3
+      { fx:0.50, fy:0.70 }, // 4
+      { fx:0.28, fy:0.58 }, // 5
+      { fx:0.28, fy:0.32 }, // 6
+      // outer
+      { fx:0.50, fy:0.04 }, // 7
+      { fx:0.85, fy:0.18 }, // 8
+      { fx:0.95, fy:0.50 }, // 9
+      { fx:0.85, fy:0.82 }, // 10
+      { fx:0.50, fy:0.95 }, // 11
+      { fx:0.15, fy:0.82 }, // 12
+      { fx:0.05, fy:0.50 }, // 13
+      { fx:0.15, fy:0.18 }, // 14
+      // extra
+      { fx:0.35, fy:0.12 }, // 15
+      { fx:0.65, fy:0.12 }, // 16
+      { fx:0.90, fy:0.35 }, // 17
+      { fx:0.90, fy:0.65 }, // 18
+      { fx:0.65, fy:0.88 }, // 19
+      { fx:0.35, fy:0.88 }, // 20
+      { fx:0.10, fy:0.65 }, // 21
+      { fx:0.10, fy:0.35 }, // 22
+    ]
+    // Edges connecting them — spiderweb pattern
+    const EDGES = [
+      [0,1],[0,2],[0,3],[0,4],[0,5],[0,6],
+      [1,2],[2,3],[3,4],[4,5],[5,6],[6,1],
+      [1,7],[1,15],[1,16],[2,16],[2,17],[2,8],
+      [3,8],[3,9],[3,17],[3,18],[4,18],[4,19],[4,10],
+      [5,19],[5,20],[5,21],[4,11],[5,12],
+      [6,21],[6,22],[6,14],[6,13],[5,13],
+      [7,15],[7,16],[8,17],[9,18],[10,19],[11,20],[12,21],[13,22],[14,15],
+      [15,22],[16,17],[17,18],[18,19],[19,20],[20,21],[21,22],[22,15],
+    ]
+
+    // Travel a pulse along each edge
+    let pulses = EDGES.map((e, i) => ({
+      edge: e, t: Math.random(), speed: 0.003 + Math.random() * 0.004, active: Math.random() > 0.5,
+    }))
+    // Randomly activate new pulses
+    let lastActivate = 0
+
+    function draw(time) {
+      const dt = time - timeRef.current
+      timeRef.current = time
+      const ctx = canvas.getContext('2d')
+      const W = canvas.width, H = canvas.height
+      ctx.clearRect(0, 0, W, H)
+
+      const nodes = NODE_DEFS.map(n => ({ x: n.fx * W, y: n.fy * H }))
+
+      // draw edges
+      EDGES.forEach(([a, b]) => {
+        ctx.beginPath()
+        ctx.moveTo(nodes[a].x, nodes[a].y)
+        ctx.lineTo(nodes[b].x, nodes[b].y)
+        ctx.strokeStyle = 'rgba(220,20,60,0.12)'
+        ctx.lineWidth = 0.8
+        ctx.stroke()
+      })
+
+      // draw pulses
+      pulses.forEach(p => {
+        if (!p.active) return
+        p.t += p.speed
+        if (p.t > 1) { p.t = 0; p.active = false; return }
+        const [a, b] = p.edge
+        const x = nodes[a].x + (nodes[b].x - nodes[a].x) * p.t
+        const y = nodes[a].y + (nodes[b].y - nodes[a].y) * p.t
+        const g = ctx.createRadialGradient(x, y, 0, x, y, 6)
+        g.addColorStop(0, 'rgba(220,20,60,0.95)')
+        g.addColorStop(1, 'rgba(220,20,60,0)')
+        ctx.beginPath()
+        ctx.arc(x, y, 6, 0, Math.PI * 2)
+        ctx.fillStyle = g
+        ctx.fill()
+        // bright centre
+        ctx.beginPath()
+        ctx.arc(x, y, 2, 0, Math.PI * 2)
+        ctx.fillStyle = '#ff6b75'
+        ctx.fill()
+      })
+
+      // randomly trigger new pulses
+      if (time - lastActivate > 120) {
+        lastActivate = time
+        const idle = pulses.filter(p => !p.active)
+        if (idle.length > 0) {
+          idle[Math.floor(Math.random() * idle.length)].active = true
+        }
+      }
+
+      // draw nodes
+      nodes.forEach((n, i) => {
+        const isCore = i === 0
+        const r = isCore ? 7 : 3.5
+        // glow
+        const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 4)
+        g.addColorStop(0, `rgba(220,20,60,${isCore ? 0.5 : 0.25})`)
+        g.addColorStop(1, 'rgba(220,20,60,0)')
+        ctx.beginPath()
+        ctx.arc(n.x, n.y, r * 4, 0, Math.PI * 2)
+        ctx.fillStyle = g
+        ctx.fill()
+        // dot
+        ctx.beginPath()
+        ctx.arc(n.x, n.y, r, 0, Math.PI * 2)
+        ctx.fillStyle = isCore ? '#e63946' : 'rgba(220,20,60,0.6)'
+        ctx.fill()
+      })
+
+      frameRef.current = requestAnimationFrame(draw)
+    }
+
+    frameRef.current = requestAnimationFrame(draw)
+    return () => { cancelAnimationFrame(frameRef.current); window.removeEventListener('resize', resize) }
+  }, [])
+
+  return (
+    <canvas ref={canvasRef} style={{
+      position: 'absolute', inset: 0, width: '100%', height: '100%',
+      zIndex: 0, pointerEvents: 'none',
+    }} />
+  )
+}
+
+/* ── Product data node — floats at a web intersection ───────────────── */
+function DataNode({ card, animClass, pos, delay }) {
+  return (
+    <motion.div className={animClass}
+      initial={{ opacity:0, scale:0.8 }} animate={{ opacity:1, scale:1 }}
+      transition={{ delay, duration:0.5 }}
+      style={{ position:'absolute', ...pos }}>
+      <div style={{
+        background:'rgba(4,0,0,0.88)', border:'1px solid rgba(220,20,60,0.3)',
+        borderRadius:'4px', padding:'10px 14px', backdropFilter:'blur(16px)',
+        minWidth:'170px', fontFamily:'monospace',
+        boxShadow:'0 0 20px rgba(220,20,60,0.1)',
+      }}>
+        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'4px' }}>
+          <span style={{ color:'rgba(220,20,60,0.6)', fontSize:'0.55rem', letterSpacing:'0.15em' }}>{card.tag.toUpperCase()}</span>
+          <span style={{ background:'rgba(220,20,60,0.15)', color:'#ff6b75', borderRadius:'2px', padding:'0 5px', fontSize:'0.6rem', fontWeight:800 }}>{card.score}</span>
+        </div>
+        <p style={{ color:'#e2e8f0', fontSize:'0.75rem', fontWeight:600, marginBottom:'3px', lineHeight:1.3 }}>{card.name}</p>
+        <p style={{ color:'#e63946', fontSize:'0.78rem', fontWeight:800 }}>{card.price}</p>
+        {/* connection dot */}
+        <div style={{ position:'absolute', top:'50%', right:'-5px', transform:'translateY(-50%)', width:'8px', height:'8px', borderRadius:'50%', background:'#e63946', boxShadow:'0 0 8px #e63946' }}/>
+      </div>
+    </motion.div>
+  )
+}
+
+/* ── Status node — small data readout at edge of web ────────────────── */
+function StatusNode({ label, value, pos, delay }) {
+  return (
+    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay }}
+      style={{ position:'absolute', ...pos, fontFamily:'monospace', pointerEvents:'none' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+        <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#4ade80', boxShadow:'0 0 6px #4ade80', flexShrink:0, animation:'pulse-glow 2s infinite' }}/>
+        <div>
+          <div style={{ color:'rgba(220,20,60,0.55)', fontSize:'0.5rem', letterSpacing:'0.12em' }}>{label}</div>
+          <div style={{ color:'rgba(255,255,255,0.5)', fontSize:'0.62rem', fontWeight:700 }}>{value}</div>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
 function Section({ children, style, className }) {
   const ref = useRef(null)
   const visible = useIntersection(ref)
@@ -497,13 +685,6 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
           width: '600px', height: '600px', borderRadius: '50%',
           background: 'radial-gradient(circle, rgba(180,10,40,0.18) 0%, rgba(220,20,60,0.06) 45%, transparent 70%)',
         }} />
-        {/* Centre faint pulse */}
-        <div style={{
-          position: 'absolute', top: '30%', left: '50%', transform: 'translateX(-50%)',
-          width: '500px', height: '500px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(220,20,60,0.07) 0%, transparent 65%)',
-          animation: 'pulse-glow 4s ease-in-out infinite',
-        }} />
         {/* Animated web-wave SVG — red lines that are actually visible */}
         <svg style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '220px', opacity: 0.28 }}
           viewBox="0 0 1440 220" preserveAspectRatio="none">
@@ -539,310 +720,221 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
         }} />
       </div>
 
-      {/* Nav */}
+      {/* ── NAV — intelligence network terminal bar ─────────────────── */}
       <nav style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '16px 32px',
-        background: 'rgba(8,8,8,0.8)',
-        backdropFilter: 'blur(20px)',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 32px', height: '56px',
+        background: 'rgba(4,0,0,0.92)',
+        backdropFilter: 'blur(24px)',
+        borderBottom: '1px solid rgba(220,20,60,0.18)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{
-            width: '32px', height: '32px',
-            borderRadius: '8px',
-            background: 'radial-gradient(circle, #e63946, #8b0000)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 0 14px rgba(220,20,60,0.6)',
-          }}>
-            <SpiderIcon size={18} color="#fff" />
+        {/* Left — system ID */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Spider web logo */}
+          <div style={{ position: 'relative', width: '36px', height: '36px', flexShrink: 0 }}>
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+              {/* web spokes */}
+              {[0,30,60,90,120,150,180,210,240,270,300,330].map((a,i) => {
+                const r = (a*Math.PI)/180
+                return <line key={i} x1="18" y1="18" x2={18+Math.cos(r)*16} y2={18+Math.sin(r)*16} stroke="#e63946" strokeWidth="0.8" strokeOpacity="0.7"/>
+              })}
+              {/* concentric rings */}
+              {[5,9,13,16].map(r => <circle key={r} cx="18" cy="18" r={r} fill="none" stroke="#e63946" strokeWidth="0.7" strokeOpacity="0.5"/>)}
+              {/* center dot */}
+              <circle cx="18" cy="18" r="2.5" fill="#e63946"/>
+            </svg>
+            {/* pulsing glow */}
+            <div style={{ position:'absolute', inset:0, borderRadius:'50%', background:'radial-gradient(circle, rgba(220,20,60,0.3), transparent 70%)', animation:'pulse-glow 2s infinite' }}/>
           </div>
-          <span style={{ fontWeight: 900, fontSize: '1.1rem', letterSpacing: '0.12em', color: '#fff', fontFamily: 'Space Grotesk, sans-serif' }}>RONIN</span>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+              <span style={{ fontFamily:'Space Grotesk, monospace', fontWeight:900, fontSize:'0.95rem', letterSpacing:'0.2em', color:'#fff' }}>WEB</span>
+              <span style={{ width:'1px', height:'14px', background:'rgba(220,20,60,0.5)' }}/>
+              <span style={{ fontFamily:'Space Grotesk, monospace', fontWeight:900, fontSize:'0.95rem', letterSpacing:'0.2em', color:'#e63946' }}>INTEL</span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:'6px', marginTop:'1px' }}>
+              <span style={{ width:'5px', height:'5px', borderRadius:'50%', background:'#4ade80', boxShadow:'0 0 6px #4ade80', animation:'pulse-glow 1.5s infinite' }}/>
+              <span style={{ fontFamily:'monospace', fontSize:'0.55rem', color:'rgba(220,20,60,0.6)', letterSpacing:'0.15em' }}>NETWORK ACTIVE • 847 NODES</span>
+            </div>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            onClick={onHistoryToggle}
-            style={{
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: '#94a3b8',
-              borderRadius: '8px',
-              padding: '7px 14px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              fontWeight: 500,
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#e2e8f0' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#94a3b8' }}
+
+        {/* Centre — status readout */}
+        <div style={{ display:'flex', gap:'24px', alignItems:'center' }}>
+          {[['AMAZON','LIVE'],['REVIEWS','12.4K'],['AGENTS','5']].map(([label,val]) => (
+            <div key={label} style={{ textAlign:'center', display:'flex', flexDirection:'column', gap:'1px' }}>
+              <span style={{ fontFamily:'monospace', fontSize:'0.5rem', color:'rgba(220,20,60,0.5)', letterSpacing:'0.12em' }}>{label}</span>
+              <span style={{ fontFamily:'monospace', fontSize:'0.7rem', fontWeight:700, color:'#ff6b75' }}>{val}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Right — controls */}
+        <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+          <button onClick={onHistoryToggle} style={{
+            background:'rgba(220,20,60,0.07)', border:'1px solid rgba(220,20,60,0.25)',
+            color:'#ff6b75', borderRadius:'6px', padding:'6px 14px',
+            fontSize:'0.72rem', fontWeight:700, cursor:'pointer', letterSpacing:'0.08em',
+            fontFamily:'monospace', transition:'all 0.2s',
+          }}
+          onMouseEnter={e=>{ e.currentTarget.style.background='rgba(220,20,60,0.18)'; e.currentTarget.style.borderColor='rgba(220,20,60,0.5)' }}
+          onMouseLeave={e=>{ e.currentTarget.style.background='rgba(220,20,60,0.07)'; e.currentTarget.style.borderColor='rgba(220,20,60,0.25)' }}
           >
-            History
+            [ HISTORY ]
           </button>
         </div>
       </nav>
 
-      {/* ── HERO ───────────────────────────────────────────────────────── */}
-      <motion.section
-        style={{ y: heroY, opacity: heroOpacity, position: 'relative', zIndex: 1 }}
-      >
-        <div style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '160px 24px 120px',
-          position: 'relative',
-        }}>
-          {/* Floating product cards */}
-          <div style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}>
-            <FloatingCard card={FLOATING_CARDS[0]} animClass="animate-float"  style={{ position: 'absolute', top: '14%', left: '4%',  opacity: 0.75 }} />
-            <FloatingCard card={FLOATING_CARDS[1]} animClass="animate-float2" style={{ position: 'absolute', top: '18%', right: '16%', opacity: 0.75 }} />
-            <FloatingCard card={FLOATING_CARDS[2]} animClass="animate-float"  style={{ position: 'absolute', bottom: '22%', left: '7%', opacity: 0.5 }} />
+      {/* ── HERO — spider-web intelligence network ─────────────────── */}
+      <motion.section style={{ y: heroY, opacity: heroOpacity, position: 'relative', zIndex: 1 }}>
+        <div style={{ minHeight: '100vh', position: 'relative', overflow: 'hidden', paddingTop: '56px' }}>
 
+          {/* ── Full-viewport web SVG backdrop ── */}
+          <WebNetworkBackground />
+
+          {/* ── Data node cards — connected to web ── */}
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+            <DataNode card={FLOATING_CARDS[0]} animClass="animate-float"  pos={{ top:'14%', left:'3%' }}  delay={0.8} />
+            <DataNode card={FLOATING_CARDS[1]} animClass="animate-float2" pos={{ top:'16%', right:'14%' }} delay={1.0} />
+            <DataNode card={FLOATING_CARDS[2]} animClass="animate-float"  pos={{ bottom:'20%', left:'6%' }} delay={1.2} />
+            {/* extra nodes — just status dots with labels */}
+            <StatusNode label="REDDIT" value="2.1K posts" pos={{ top:'38%', left:'2%' }}  delay={1.4} />
+            <StatusNode label="YOUTUBE" value="340 reviews" pos={{ top:'58%', right:'3%' }} delay={1.5} />
+            <StatusNode label="AMAZON" value="8.4K results" pos={{ bottom:'32%', right:'12%' }} delay={1.6} />
           </div>
 
-          {/* Badge */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: 'rgba(220,20,60,0.1)',
-              border: '1px solid rgba(220,20,60,0.3)',
-              borderRadius: '100px',
-              padding: '6px 16px',
-              marginBottom: '28px',
-              fontSize: '0.75rem',
-              color: '#ff8c94',
-              fontWeight: 600,
-              letterSpacing: '0.05em',
-            }}
-          >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e63946', animation: 'pulse-glow 2s infinite' }} />
-            🕷 WITH GREAT POWER COMES GREAT SAVINGS
-          </motion.div>
-
-          {/* Headline */}
-          <motion.h1
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            style={{
-              fontSize: 'clamp(2.5rem, 7vw, 5.5rem)',
-              fontWeight: 900,
-              lineHeight: 1.0,
-              textAlign: 'center',
-              marginBottom: '24px',
-              maxWidth: '900px',
-              fontFamily: 'Space Grotesk, Inter, sans-serif',
-            }}
-          >
-            <span style={{ color: '#fff' }}>Find The Best</span>
-            <br />
-            <span className="gradient-text">Product In Seconds</span>
-          </motion.h1>
-
-          {/* Sub */}
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35, duration: 0.6 }}
-            style={{
-              color: '#64748b',
-              fontSize: 'clamp(0.95rem, 2vw, 1.15rem)',
-              textAlign: 'center',
-              maxWidth: '560px',
-              lineHeight: 1.7,
-              marginBottom: '48px',
-            }}
-          >
-            AI analyzes prices, reviews, specifications and expert opinions to find the perfect product for you — in seconds.
-          </motion.p>
-
-          {/* Search box */}
-          <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: 0.45, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            style={{ width: '100%', maxWidth: '640px', position: 'relative', zIndex: 2 }}
-          >
-            <form onSubmit={handleSubmit}>
-              <div style={{
-                position: 'relative',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(220,20,60,0.3)',
-                borderRadius: '16px',
-                padding: '4px',
-                boxShadow: '0 0 40px rgba(220,20,60,0.1)',
-                transition: 'box-shadow 0.3s, border-color 0.3s',
-              }}
-              onFocus={() => {}}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px' }}>
-                  <Search size={18} style={{ color: '#e63946', flexShrink: 0 }} />
-                  <input
-                    type="text"
-                    value={inputValue}
-                    onChange={e => setInputValue(e.target.value)}
-                    disabled={isLoading}
-                    placeholder={typingText || 'Search products or compare...'}
-                    style={{
-                      flex: 1,
-                      background: 'transparent',
-                      border: 'none',
-                      outline: 'none',
-                      color: '#e2e8f0',
-                      fontSize: '1rem',
-                      fontFamily: 'Inter, sans-serif',
-                      opacity: isLoading ? 0.6 : 1,
-                    }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={isLoading || !inputValue.trim()}
-                    style={{
-                      background: 'linear-gradient(135deg, #e63946, #e63946)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '10px',
-                      padding: '10px 20px',
-                      fontSize: '0.9rem',
-                      fontWeight: 700,
-                      cursor: isLoading || !inputValue.trim() ? 'not-allowed' : 'pointer',
-                      opacity: isLoading || !inputValue.trim() ? 0.6 : 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '7px',
-                      whiteSpace: 'nowrap',
-                      transition: 'all 0.2s',
-                      boxShadow: '0 4px 14px rgba(220,20,60,0.4)',
-                    }}
-                  >
-                    {isLoading ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowRight size={15} />}
-                    {isLoading ? 'Searching...' : 'Search'}
-                  </button>
-                </div>
-              </div>
-            </form>
-
-            {/* Quick pills */}
-            {!isLoading && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.6 }}
-                style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px', justifyContent: 'center' }}
-              >
-                {QUICK_PILLS.map((pill) => (
-                  <button
-                    key={pill}
-                    type="button"
-                    onClick={() => { setInputValue(pill); onSearch(pill) }}
-                    style={{
-                      background: 'rgba(220,20,60,0.07)',
-                      border: '1px solid rgba(220,20,60,0.2)',
-                      borderRadius: '20px',
-                      padding: '6px 14px',
-                      color: '#ff6b75',
-                      fontSize: '0.75rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      fontFamily: 'Inter, sans-serif',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,20,60,0.15)'; e.currentTarget.style.borderColor = 'rgba(220,20,60,0.5)' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,20,60,0.07)'; e.currentTarget.style.borderColor = 'rgba(220,20,60,0.2)' }}
-                  >
-                    {pill}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-
-            {/* Progress feed */}
-            {isLoading && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                style={{ marginTop: '20px' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                  <Loader2 size={13} style={{ color: '#e63946', animation: 'spin 1s linear infinite' }} />
-                  <span style={{ color: '#e63946', fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>
-                    Agent Activity
-                  </span>
-                </div>
-                <div ref={progressRef} style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  {progress.slice(-8).map((msg, i) => (
-                    <div key={i} style={{
-                      background: 'rgba(220,20,60,0.05)',
-                      border: '1px solid rgba(220,20,60,0.12)',
-                      borderRadius: '8px',
-                      padding: '8px 12px',
-                      fontSize: '0.8rem',
-                      color: i === Math.min(progress.length, 8) - 1 ? '#e2e8f0' : '#475569',
-                      display: 'flex',
-                      gap: '8px',
-                    }}>
-                      <span style={{ color: '#e63946', fontSize: '0.65rem', marginTop: '3px', flexShrink: 0 }}>▶</span>
-                      {msg}
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </motion.div>
-
-          {/* Scroll indicator — spider rappelling down */}
-          {!isLoading && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.4 }}
-              style={{ position: 'absolute', bottom: '24px', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}
-            >
-              <span style={{ color: 'rgba(220,20,60,0.55)', fontSize: '0.6rem', letterSpacing: '0.18em', fontWeight: 700, marginBottom: '8px', textTransform: 'uppercase' }}>
-                Scroll to Explore
-              </span>
-              {/* silk thread */}
-              <motion.div
-                animate={{ scaleY: [0.6, 1, 0.6] }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                style={{ width: '1.5px', height: '36px', background: 'linear-gradient(to bottom, rgba(220,20,60,0.7), transparent)', transformOrigin: 'top', marginBottom: '-4px' }}
-              />
-              {/* rappelling spider */}
-              <motion.div
-                animate={{ y: [0, 10, 0] }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                style={{ filter: 'drop-shadow(0 0 6px rgba(220,20,60,0.8))' }}
-              >
-                <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-                  <path d="M12 10 L5 5"  stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-                  <path d="M16 10 L23 5" stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-                  <path d="M12 13 L3 12" stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-                  <path d="M16 13 L25 12" stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-                  <path d="M12 17 L5 22"  stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-                  <path d="M16 17 L23 22" stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-                  <ellipse cx="14" cy="14" rx="4.5" ry="6" fill="#1a0000" stroke="#e63946" strokeWidth="1"/>
-                  <ellipse cx="14" cy="10" rx="2.5" ry="3" fill="#e63946" opacity="0.9"/>
-                  <circle cx="12.5" cy="8.5" r="1" fill="#fff"/>
-                  <circle cx="15.5" cy="8.5" r="1" fill="#fff"/>
-                  <circle cx="12.8" cy="8.5" r="0.45" fill="#000"/>
-                  <circle cx="15.8" cy="8.5" r="0.45" fill="#000"/>
-                </svg>
-              </motion.div>
+          {/* ── Centre content ── */}
+          <div style={{
+            position: 'relative', zIndex: 10,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            minHeight: '100vh', padding: '80px 24px 80px',
+          }}>
+            {/* System status badge */}
+            <motion.div initial={{ opacity:0, y:-16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.15 }}
+              style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'28px', fontFamily:'monospace' }}>
+              <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#4ade80', boxShadow:'0 0 8px #4ade80', animation:'pulse-glow 1.5s infinite' }}/>
+              <span style={{ color:'rgba(220,20,60,0.7)', fontSize:'0.65rem', letterSpacing:'0.2em' }}>INTELLIGENCE NETWORK ONLINE</span>
+              <span style={{ color:'rgba(255,255,255,0.2)', fontSize:'0.65rem' }}>//</span>
+              <span style={{ color:'rgba(255,255,255,0.35)', fontSize:'0.65rem', letterSpacing:'0.1em' }}>847 NODES ACTIVE</span>
             </motion.div>
-          )}
+
+            {/* Main headline */}
+            <motion.h1 initial={{ opacity:0, y:32 }} animate={{ opacity:1, y:0 }}
+              transition={{ delay:0.25, duration:0.8, ease:[0.22,1,0.36,1] }}
+              style={{ fontFamily:'Space Grotesk, sans-serif', fontWeight:900, lineHeight:1.0, textAlign:'center', marginBottom:'8px', maxWidth:'900px' }}>
+              <span style={{ display:'block', fontSize:'clamp(0.7rem,1.5vw,1rem)', letterSpacing:'0.35em', color:'rgba(220,20,60,0.6)', fontWeight:700, marginBottom:'12px', fontFamily:'monospace' }}>
+                [ WEB INTEL SYSTEM v2.4 ]
+              </span>
+              <span style={{ display:'block', fontSize:'clamp(2.8rem,7vw,5.8rem)', color:'#fff', lineHeight:1.0 }}>THE WEB</span>
+              <span style={{ display:'block', fontSize:'clamp(2.8rem,7vw,5.8rem)', lineHeight:1.0 }} className="gradient-text">KNOWS EVERYTHING</span>
+            </motion.h1>
+
+            {/* Sub */}
+            <motion.p initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.4, duration:0.6 }}
+              style={{ color:'#4a5568', fontSize:'clamp(0.85rem,1.8vw,1rem)', textAlign:'center', maxWidth:'500px', lineHeight:1.8, marginBottom:'44px', fontFamily:'monospace', letterSpacing:'0.02em' }}>
+              Spider-web AI crawls prices, reviews &amp; community intelligence<br/>
+              <span style={{ color:'rgba(220,20,60,0.5)' }}>——</span> then delivers the single best product for you
+            </motion.p>
+
+            {/* Search — styled as terminal input */}
+            <motion.div initial={{ opacity:0, y:24, scale:0.97 }} animate={{ opacity:1, y:0, scale:1 }}
+              transition={{ delay:0.5, duration:0.6, ease:[0.22,1,0.36,1] }}
+              style={{ width:'100%', maxWidth:'620px', position:'relative', zIndex:2 }}>
+
+              <form onSubmit={handleSubmit}>
+                <div style={{
+                  background:'rgba(4,0,0,0.8)', border:'1px solid rgba(220,20,60,0.4)',
+                  borderRadius:'4px', padding:'0',
+                  boxShadow:'0 0 0 1px rgba(220,20,60,0.1), 0 0 40px rgba(220,20,60,0.12)',
+                  overflow:'hidden',
+                }}>
+                  {/* terminal top bar */}
+                  <div style={{ background:'rgba(220,20,60,0.08)', borderBottom:'1px solid rgba(220,20,60,0.2)', padding:'6px 12px', display:'flex', alignItems:'center', gap:'8px' }}>
+                    <span style={{ fontFamily:'monospace', fontSize:'0.55rem', color:'rgba(220,20,60,0.5)', letterSpacing:'0.15em' }}>SPIDER://SEARCH_QUERY</span>
+                    <span style={{ marginLeft:'auto', fontFamily:'monospace', fontSize:'0.5rem', color:'rgba(220,20,60,0.35)' }}>⬤ LIVE</span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 14px' }}>
+                    <span style={{ color:'rgba(220,20,60,0.6)', fontFamily:'monospace', fontSize:'0.85rem', flexShrink:0 }}>›_</span>
+                    <input type="text" value={inputValue} onChange={e=>setInputValue(e.target.value)}
+                      disabled={isLoading}
+                      placeholder={typingText || 'enter search target...'}
+                      style={{ flex:1, background:'transparent', border:'none', outline:'none', color:'#e2e8f0', fontSize:'0.95rem', fontFamily:'monospace', opacity:isLoading?0.6:1, caretColor:'#e63946' }}
+                    />
+                    <button type="submit" disabled={isLoading||!inputValue.trim()} style={{
+                      background: isLoading||!inputValue.trim() ? 'rgba(220,20,60,0.2)' : '#e63946',
+                      color:'#fff', border:'none', borderRadius:'3px',
+                      padding:'8px 18px', fontSize:'0.78rem', fontWeight:800,
+                      cursor: isLoading||!inputValue.trim() ? 'not-allowed':'pointer',
+                      display:'flex', alignItems:'center', gap:'6px', whiteSpace:'nowrap',
+                      fontFamily:'monospace', letterSpacing:'0.1em', transition:'all 0.2s',
+                      boxShadow: isLoading||!inputValue.trim() ? 'none' : '0 0 16px rgba(220,20,60,0.5)',
+                    }}>
+                      {isLoading ? <Loader2 size={13} style={{ animation:'spin 1s linear infinite' }}/> : <span>SCAN</span>}
+                      {isLoading ? 'SCANNING...' : '⟶'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              {/* Quick pills */}
+              {!isLoading && (
+                <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.7 }}
+                  style={{ display:'flex', flexWrap:'wrap', gap:'6px', marginTop:'12px', justifyContent:'center' }}>
+                  {QUICK_PILLS.map(pill => (
+                    <button key={pill} type="button" onClick={()=>{ setInputValue(pill); onSearch(pill) }} style={{
+                      background:'rgba(220,20,60,0.06)', border:'1px solid rgba(220,20,60,0.2)',
+                      borderRadius:'3px', padding:'5px 12px', color:'rgba(220,20,60,0.7)',
+                      fontSize:'0.68rem', cursor:'pointer', transition:'all 0.2s',
+                      fontFamily:'monospace', letterSpacing:'0.05em',
+                    }}
+                    onMouseEnter={e=>{e.currentTarget.style.background='rgba(220,20,60,0.15)';e.currentTarget.style.borderColor='rgba(220,20,60,0.5)';e.currentTarget.style.color='#ff6b75'}}
+                    onMouseLeave={e=>{e.currentTarget.style.background='rgba(220,20,60,0.06)';e.currentTarget.style.borderColor='rgba(220,20,60,0.2)';e.currentTarget.style.color='rgba(220,20,60,0.7)'}}>
+                      {pill}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+
+              {/* Progress feed */}
+              {isLoading && (
+                <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} style={{ marginTop:'16px' }}>
+                  <div style={{ background:'rgba(4,0,0,0.9)', border:'1px solid rgba(220,20,60,0.25)', borderRadius:'4px', overflow:'hidden' }}>
+                    <div style={{ background:'rgba(220,20,60,0.08)', borderBottom:'1px solid rgba(220,20,60,0.2)', padding:'5px 12px', display:'flex', alignItems:'center', gap:'8px' }}>
+                      <Loader2 size={10} style={{ color:'#e63946', animation:'spin 1s linear infinite' }}/>
+                      <span style={{ fontFamily:'monospace', fontSize:'0.55rem', color:'rgba(220,20,60,0.6)', letterSpacing:'0.15em' }}>AGENT PIPELINE</span>
+                    </div>
+                    <div ref={progressRef} style={{ maxHeight:'160px', overflowY:'auto', padding:'8px' }}>
+                      {progress.slice(-8).map((msg,i)=>(
+                        <div key={i} style={{ display:'flex', gap:'8px', padding:'4px 6px', fontSize:'0.72rem', fontFamily:'monospace', color: i===Math.min(progress.length,8)-1 ? '#ff6b75':'#334155' }}>
+                          <span style={{ color:'rgba(220,20,60,0.5)', flexShrink:0 }}>›</span>{msg}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
+
+            {/* Scroll indicator */}
+            {!isLoading && (
+              <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:1.6 }}
+                style={{ position:'absolute', bottom:'20px', left:'50%', transform:'translateX(-50%)', display:'flex', flexDirection:'column', alignItems:'center', pointerEvents:'none' }}>
+                <span style={{ fontFamily:'monospace', color:'rgba(220,20,60,0.4)', fontSize:'0.55rem', letterSpacing:'0.2em', marginBottom:'8px' }}>SCROLL TO EXPLORE</span>
+                <motion.div animate={{ y:[0,10,0] }} transition={{ duration:2, repeat:Infinity }}
+                  style={{ width:'1.5px', height:'32px', background:'linear-gradient(to bottom, rgba(220,20,60,0.6), transparent)', transformOrigin:'top' }}/>
+                <motion.div animate={{ y:[0,10,0] }} transition={{ duration:2, repeat:Infinity }}
+                  style={{ filter:'drop-shadow(0 0 5px rgba(220,20,60,0.8))', marginTop:'-3px' }}>
+                  <svg width="18" height="18" viewBox="0 0 28 28" fill="none">
+                    <path d="M12 10 L5 5 M16 10 L23 5 M12 13 L3 12 M16 13 L25 12 M12 17 L5 22 M16 17 L23 22" stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
+                    <ellipse cx="14" cy="14" rx="4.5" ry="6" fill="#1a0000" stroke="#e63946" strokeWidth="1"/>
+                    <ellipse cx="14" cy="10" rx="2.5" ry="3" fill="#e63946" opacity="0.9"/>
+                    <circle cx="12.5" cy="8.5" r="1" fill="#fff"/><circle cx="15.5" cy="8.5" r="1" fill="#fff"/>
+                  </svg>
+                </motion.div>
+              </motion.div>
+            )}
+          </div>
         </div>
       </motion.section>
 

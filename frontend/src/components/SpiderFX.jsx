@@ -120,27 +120,16 @@ function ScrollWebs() {
     return () => clearInterval(iv)
   }, [])
 
-  // top-left web: visible when near top (scroll < 0.15), full at scroll=0, fades as you scroll away
-  const tlProgress = Math.max(0, 1 - scrollPct / 0.15)
-
-  // bottom-right web: grows as you approach page end (scroll > 0.85)
+  // bottom-right web only — grows as you approach page end, no spider in it
   const brProgress = Math.max(0, (scrollPct - 0.85) / 0.15)
 
   return (
-    <>
-      <CornerWebEl
-        corner={0}
-        progress={tlProgress}
-        showSpider={true}
-        spiderLegPhase={legPhase}
-      />
-      <CornerWebEl
-        corner={3}
-        progress={brProgress}
-        showSpider={true}
-        spiderLegPhase={legPhase}
-      />
-    </>
+    <CornerWebEl
+      corner={3}
+      progress={brProgress}
+      showSpider={false}
+      spiderLegPhase={legPhase}
+    />
   )
 }
 
