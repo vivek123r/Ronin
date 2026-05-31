@@ -19,7 +19,7 @@ function getAvailabilityDisplay(availability) {
 function ScorePill({ score }) {
   const num = typeof score === "number" ? score : parseFloat(score);
   let bg, color;
-  if (num >= 75) { bg = 'rgba(167,139,250,0.12)'; color = '#a78bfa'; }
+  if (num >= 75) { bg = 'rgba(255,140,148,0.12)'; color = '#ff8c94'; }
   else if (num >= 55) { bg = 'rgba(250,204,21,0.12)'; color = '#fbbf24'; }
   else { bg = 'rgba(248,113,113,0.12)'; color = '#f87171'; }
   return (
@@ -34,7 +34,7 @@ function MiniRatingBars({ dist }) {
   const colors = { 5: '#4ade80', 4: '#a3e635', 3: '#facc15', 2: '#fb923c', 1: '#f87171' };
   return (
     <div style={{ marginTop: '10px' }}>
-      <p style={{ color: '#6366f1', fontSize: '0.72rem', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Rating Distribution</p>
+      <p style={{ color: '#e63946', fontSize: '0.72rem', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Rating Distribution</p>
       {[5, 4, 3, 2, 1].map(star => {
         const pct = dist[star] ?? dist[String(star)] ?? 0;
         return (
@@ -42,7 +42,7 @@ function MiniRatingBars({ dist }) {
             <span style={{ color: '#475569', fontSize: '0.65rem', width: '10px' }}>{star}</span>
             <span style={{ color: '#475569', fontSize: '0.6rem' }}>★</span>
             <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-              <div style={{ width: `${pct}%`, height: '100%', borderRadius: '2px', background: colors[star] || '#6366f1', transition: 'width 0.6s ease' }} />
+              <div style={{ width: `${pct}%`, height: '100%', borderRadius: '2px', background: colors[star] || '#e63946', transition: 'width 0.6s ease' }} />
             </div>
             <span style={{ color: '#334155', fontSize: '0.6rem', width: '24px' }}>{pct}%</span>
           </div>
@@ -75,7 +75,7 @@ function ExpandedRow({ item, productCache }) {
 
   return (
     <tr>
-      <td colSpan={7} style={{ background: 'rgba(99,102,241,0.03)', borderBottom: '1px solid rgba(99,102,241,0.12)', padding: 0 }}>
+      <td colSpan={7} style={{ background: 'rgba(220,20,60,0.03)', borderBottom: '1px solid rgba(220,20,60,0.12)', padding: 0 }}>
         <motion.div
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
@@ -98,10 +98,10 @@ function ExpandedRow({ item, productCache }) {
               )}
               {about.length > 0 && (
                 <div>
-                  <p style={{ color: '#6366f1', fontSize: '0.72rem', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Specifications</p>
+                  <p style={{ color: '#e63946', fontSize: '0.72rem', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Specifications</p>
                   {about.map((b, i) => (
                     <div key={i} style={{ display: 'flex', gap: '7px', marginBottom: '4px', alignItems: 'flex-start' }}>
-                      <span style={{ color: '#4f46e5', fontSize: '0.6rem', marginTop: '4px', flexShrink: 0 }}>◆</span>
+                      <span style={{ color: '#c41230', fontSize: '0.6rem', marginTop: '4px', flexShrink: 0 }}>◆</span>
                       <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.78rem', lineHeight: 1.4 }}>{b}</span>
                     </div>
                   ))}
@@ -113,7 +113,7 @@ function ExpandedRow({ item, productCache }) {
               <MiniRatingBars dist={ratingDist} />
               {reviews.length > 0 && (
                 <div style={{ marginTop: '12px' }}>
-                  <p style={{ color: '#6366f1', fontSize: '0.72rem', fontWeight: 600, marginBottom: '8px', letterSpacing: '0.05em' }}>Customer Reviews</p>
+                  <p style={{ color: '#e63946', fontSize: '0.72rem', fontWeight: 600, marginBottom: '8px', letterSpacing: '0.05em' }}>Customer Reviews</p>
                   {reviews.map((r, i) => (
                     <div key={i} style={{
                       background: 'rgba(255,255,255,0.03)',
@@ -165,7 +165,7 @@ export default function RankedTable({ ranked, productCache }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
         <h2 style={{ color: '#fff', fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>All Ranked Products</h2>
-        <span style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', color: '#818cf8', borderRadius: '20px', padding: '2px 10px', fontSize: '0.72rem', fontWeight: 600 }}>
+        <span style={{ background: 'rgba(220,20,60,0.1)', border: '1px solid rgba(220,20,60,0.3)', color: '#ff6b75', borderRadius: '20px', padding: '2px 10px', fontSize: '0.72rem', fontWeight: 600 }}>
           {ranked.length}
         </span>
       </div>
@@ -173,7 +173,7 @@ export default function RankedTable({ ranked, productCache }) {
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '560px' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid rgba(99,102,241,0.15)' }}>
+            <tr style={{ borderBottom: '1px solid rgba(220,20,60,0.15)' }}>
               {['#', 'Product', 'Score', 'Quality', 'Price', 'Stock', 'Link'].map(h => (
                 <th key={h} style={{ color: '#475569', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '8px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>
                   {h}
@@ -196,7 +196,7 @@ export default function RankedTable({ ranked, productCache }) {
                     onClick={() => setExpandedIndex(isExpanded ? null : i)}
                     style={{
                       borderBottom: isExpanded ? 'none' : '1px solid rgba(255,255,255,0.04)',
-                      background: isExpanded ? 'rgba(99,102,241,0.04)' : 'transparent',
+                      background: isExpanded ? 'rgba(220,20,60,0.04)' : 'transparent',
                     }}
                   >
                     <td style={{ padding: '11px 12px', color: 'rgba(255,255,255,0.3)', fontSize: '0.82rem', fontWeight: 700 }}>

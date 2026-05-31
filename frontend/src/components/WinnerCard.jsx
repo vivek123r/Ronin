@@ -15,7 +15,7 @@ function ScoreRing({ score }) {
     return () => clearTimeout(t);
   }, [score]);
   const val = Math.min(Math.max(score ?? 0, 0), 100);
-  const color = val >= 80 ? '#a78bfa' : val >= 60 ? '#818cf8' : '#6366f1';
+  const color = val >= 80 ? '#ff8c94' : val >= 60 ? '#ff6b75' : '#e63946';
   return (
     <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
       <svg width="120" height="120" style={{ transform: 'rotate(-90deg)' }}>
@@ -52,7 +52,7 @@ function RatingBar({ star, pct }) {
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
           transition={{ duration: 0.8, delay: (5 - star) * 0.1 }}
-          style={{ height: '100%', borderRadius: '3px', background: colors[star] || '#6366f1' }}
+          style={{ height: '100%', borderRadius: '3px', background: colors[star] || '#e63946' }}
         />
       </div>
       <span style={{ color: '#475569', fontSize: '0.65rem', width: '28px' }}>{pct}%</span>
@@ -103,11 +103,11 @@ export default function WinnerCard({ winner, weights, productCache }) {
       transition={{ duration: 0.5 }}
       style={{
         background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(99,102,241,0.2)',
+        border: '1px solid rgba(220,20,60,0.2)',
         borderRadius: '20px',
         padding: '28px',
         marginBottom: '20px',
-        boxShadow: '0 4px 40px rgba(99,102,241,0.08)',
+        boxShadow: '0 4px 40px rgba(220,20,60,0.08)',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -115,7 +115,7 @@ export default function WinnerCard({ winner, weights, productCache }) {
       {/* Ambient top glow */}
       <div style={{
         position: 'absolute', top: 0, left: '20%', right: '20%', height: '1px',
-        background: 'linear-gradient(90deg, transparent, rgba(99,102,241,0.5), transparent)',
+        background: 'linear-gradient(90deg, transparent, rgba(220,20,60,0.5), transparent)',
       }} />
 
       {/* Main row: image + score ring + info */}
@@ -140,11 +140,11 @@ export default function WinnerCard({ winner, weights, productCache }) {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-            <span style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.15em', padding: '3px 10px', borderRadius: 9999, textTransform: 'uppercase' }}>
+            <span style={{ background: 'linear-gradient(135deg, #e63946, #e63946)', color: '#fff', fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.15em', padding: '3px 10px', borderRadius: 9999, textTransform: 'uppercase' }}>
               WINNER
             </span>
             {winner.confidence != null && (
-              <span style={{ background: 'rgba(99,102,241,0.1)', color: '#818cf8', fontSize: '0.65rem', fontWeight: 600, padding: '3px 10px', borderRadius: 9999, border: '1px solid rgba(99,102,241,0.25)' }}>
+              <span style={{ background: 'rgba(220,20,60,0.1)', color: '#ff6b75', fontSize: '0.65rem', fontWeight: 600, padding: '3px 10px', borderRadius: 9999, border: '1px solid rgba(220,20,60,0.25)' }}>
                 {typeof winner.confidence === 'number' ? winner.confidence.toFixed(0) + '% confidence' : winner.confidence}
               </span>
             )}
@@ -154,7 +154,7 @@ export default function WinnerCard({ winner, weights, productCache }) {
           </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             {priceDisplay && (
-              <span style={{ background: 'rgba(99,102,241,0.12)', color: '#a78bfa', border: '1px solid rgba(99,102,241,0.3)', fontWeight: 800, fontSize: '1rem', padding: '4px 14px', borderRadius: 9999 }}>
+              <span style={{ background: 'rgba(220,20,60,0.12)', color: '#ff8c94', border: '1px solid rgba(220,20,60,0.3)', fontWeight: 800, fontSize: '1rem', padding: '4px 14px', borderRadius: 9999 }}>
                 {priceDisplay}
               </span>
             )}
@@ -189,10 +189,10 @@ export default function WinnerCard({ winner, weights, productCache }) {
         <div style={{ marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
             <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Quality Score</span>
-            <span style={{ color: '#a78bfa', fontSize: '0.75rem', fontWeight: 700 }}>{winner.quality_score.toFixed(0)}%</span>
+            <span style={{ color: '#ff8c94', fontSize: '0.75rem', fontWeight: 700 }}>{winner.quality_score.toFixed(0)}%</span>
           </div>
           <div style={{ height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: qualityWidth + '%', background: 'linear-gradient(90deg, #6366f1, #a78bfa)', borderRadius: '3px', transition: 'width 1.2s cubic-bezier(0.4,0,0.2,1)', boxShadow: '0 0 8px rgba(99,102,241,0.5)' }} />
+            <div style={{ height: '100%', width: qualityWidth + '%', background: 'linear-gradient(90deg, #e63946, #ff8c94)', borderRadius: '3px', transition: 'width 1.2s cubic-bezier(0.4,0,0.2,1)', boxShadow: '0 0 8px rgba(220,20,60,0.5)' }} />
           </div>
         </div>
       )}
@@ -209,7 +209,7 @@ export default function WinnerCard({ winner, weights, productCache }) {
 
       {/* Why */}
       {winner.why && (
-        <div style={{ marginBottom: '20px', padding: '14px 16px', background: 'rgba(99,102,241,0.04)', borderRadius: '12px', borderLeft: '3px solid rgba(99,102,241,0.4)' }}>
+        <div style={{ marginBottom: '20px', padding: '14px 16px', background: 'rgba(220,20,60,0.04)', borderRadius: '12px', borderLeft: '3px solid rgba(220,20,60,0.4)' }}>
           <p style={{ color: 'rgba(255,255,255,0.65)', fontStyle: 'italic', fontSize: '0.875rem', lineHeight: 1.7, margin: 0 }}>
             {winner.why}
           </p>
@@ -256,7 +256,7 @@ export default function WinnerCard({ winner, weights, productCache }) {
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               background: 'none', border: 'none',
-              color: '#818cf8', fontSize: '0.78rem', fontWeight: 700,
+              color: '#ff6b75', fontSize: '0.78rem', fontWeight: 700,
               cursor: 'pointer', padding: 0, marginBottom: showSpecs ? '12px' : 0,
               letterSpacing: '0.08em', textTransform: 'uppercase',
             }}
@@ -273,7 +273,7 @@ export default function WinnerCard({ winner, weights, productCache }) {
             >
               {aboutBullets.map((b, i) => (
                 <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', alignItems: 'flex-start' }}>
-                  <span style={{ color: '#6366f1', fontSize: '0.65rem', marginTop: '4px', flexShrink: 0 }}>◆</span>
+                  <span style={{ color: '#e63946', fontSize: '0.65rem', marginTop: '4px', flexShrink: 0 }}>◆</span>
                   <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.82rem', lineHeight: 1.5 }}>{b}</span>
                 </div>
               ))}
@@ -288,7 +288,7 @@ export default function WinnerCard({ winner, weights, productCache }) {
           {Object.entries(weights).map(([k, v]) => (
             <div key={k} style={{ textAlign: 'center' }}>
               <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
-              <div style={{ color: '#818cf8', fontSize: '0.78rem', fontWeight: 700 }}>{(v * 100).toFixed(0)}%</div>
+              <div style={{ color: '#ff6b75', fontSize: '0.78rem', fontWeight: 700 }}>{(v * 100).toFixed(0)}%</div>
             </div>
           ))}
         </div>
@@ -300,15 +300,15 @@ export default function WinnerCard({ winner, weights, productCache }) {
         disabled={!winner.url}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: '8px',
-          background: winner.url ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(99,102,241,0.2)',
+          background: winner.url ? 'linear-gradient(135deg, #e63946, #e63946)' : 'rgba(220,20,60,0.2)',
           color: '#fff', border: 'none', borderRadius: '10px',
           padding: '11px 28px', fontWeight: 700, fontSize: '0.9rem',
           cursor: winner.url ? 'pointer' : 'not-allowed',
-          boxShadow: winner.url ? '0 4px 20px rgba(99,102,241,0.4)' : 'none',
+          boxShadow: winner.url ? '0 4px 20px rgba(220,20,60,0.4)' : 'none',
           transition: 'all 0.2s',
         }}
-        onMouseEnter={e => winner.url && (e.currentTarget.style.boxShadow = '0 8px 28px rgba(99,102,241,0.6)')}
-        onMouseLeave={e => winner.url && (e.currentTarget.style.boxShadow = '0 4px 20px rgba(99,102,241,0.4)')}
+        onMouseEnter={e => winner.url && (e.currentTarget.style.boxShadow = '0 8px 28px rgba(220,20,60,0.6)')}
+        onMouseLeave={e => winner.url && (e.currentTarget.style.boxShadow = '0 4px 20px rgba(220,20,60,0.4)')}
       >
         <ExternalLink size={15} />
         Buy on Amazon

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { HistorySpider } from "./SpiderFX";
 
 function timeAgo(epochMs) {
   if (!epochMs) return "";
@@ -44,27 +45,27 @@ export default function HistorySidebar({ isOpen, onToggle, onSelect, history: hi
       <style>{`
         .history-sidebar {
           position: fixed; top: 0; right: 0; height: 100vh; width: 300px; z-index: 100;
-          background: rgba(3,4,10,0.95); border-left: 1px solid rgba(99,102,241,0.2);
+          background: rgba(8,8,8,0.95); border-left: 1px solid rgba(220,20,60,0.2);
           backdrop-filter: blur(24px); transform: translateX(100%);
           transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
           display: flex; flex-direction: column;
         }
-        .history-sidebar.open { transform: translateX(0); box-shadow: -4px 0 32px rgba(99,102,241,0.1); }
+        .history-sidebar.open { transform: translateX(0); box-shadow: -4px 0 32px rgba(220,20,60,0.1); }
         .history-toggle-btn {
           position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 101;
-          background: rgba(99,102,241,0.9); color: #fff; border: none;
+          background: rgba(220,20,60,0.9); color: #fff; border: none;
           border-radius: 8px 0 0 8px; padding: 12px 8px; cursor: pointer;
           writing-mode: vertical-rl; font-weight: 700; font-size: 0.65rem;
           letter-spacing: 0.08em; transition: background 0.2s, box-shadow 0.2s;
-          box-shadow: -2px 0 16px rgba(99,102,241,0.4);
+          box-shadow: -2px 0 16px rgba(220,20,60,0.4);
           display: flex; flex-direction: column; align-items: center; gap: 4px;
         }
-        .history-toggle-btn:hover { background: rgba(99,102,241,1); box-shadow: -4px 0 24px rgba(99,102,241,0.6); }
+        .history-toggle-btn:hover { background: rgba(220,20,60,1); box-shadow: -4px 0 24px rgba(220,20,60,0.6); }
         .history-entry {
           padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.04);
           cursor: pointer; transition: background 0.2s; border-radius: 8px; margin: 3px 8px;
         }
-        .history-entry:hover { background: rgba(99,102,241,0.08); }
+        .history-entry:hover { background: rgba(220,20,60,0.08); }
         .clear-btn {
           background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25);
           color: #f87171; border-radius: 7px; padding: 5px 12px; font-size: 0.72rem;
@@ -84,8 +85,8 @@ export default function HistorySidebar({ isOpen, onToggle, onSelect, history: hi
       </button>
 
       <div className={`history-sidebar${isOpen ? " open" : ""}`}>
-        <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(99,102,241,0.12)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <h3 style={{ color: "#818cf8", fontWeight: 700, fontSize: "0.9rem", margin: 0, letterSpacing: "0.05em" }}>
+        <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(220,20,60,0.12)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <h3 style={{ color: "#ff6b75", fontWeight: 700, fontSize: "0.9rem", margin: 0, letterSpacing: "0.05em" }}>
             Search History
           </h3>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -93,6 +94,13 @@ export default function HistorySidebar({ isOpen, onToggle, onSelect, history: hi
             <button onClick={onToggle} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: "1rem", padding: "2px 4px", lineHeight: 1 }}>✕</button>
           </div>
         </div>
+
+        {/* Spider drops from the top of the sidebar below the header */}
+        {isOpen && (
+          <div style={{ position: "relative", height: "0", overflow: "visible" }}>
+            <HistorySpider />
+          </div>
+        )}
 
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
           {localHistory.length === 0 ? (
@@ -113,9 +121,9 @@ export default function HistorySidebar({ isOpen, onToggle, onSelect, history: hi
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <span style={{
-                      background: mode === "comparison" ? "rgba(167,139,250,0.12)" : "rgba(99,102,241,0.1)",
-                      border: `1px solid ${mode === "comparison" ? "rgba(167,139,250,0.3)" : "rgba(99,102,241,0.25)"}`,
-                      color: mode === "comparison" ? "#c4b5fd" : "#818cf8",
+                      background: mode === "comparison" ? "rgba(255,140,148,0.12)" : "rgba(220,20,60,0.1)",
+                      border: `1px solid ${mode === "comparison" ? "rgba(255,140,148,0.3)" : "rgba(220,20,60,0.25)"}`,
+                      color: mode === "comparison" ? "#ffadb3" : "#ff6b75",
                       borderRadius: "5px", padding: "1px 7px", fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
                     }}>
                       {mode}

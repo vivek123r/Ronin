@@ -15,7 +15,7 @@ function SmallScoreRing({ score, delay = 0 }) {
   }, [score, delay]);
   const val = Math.min(Math.max(score ?? 0, 0), 100);
   const size = (SMALL_R + 10) * 2;
-  const color = val >= 75 ? '#a78bfa' : val >= 55 ? '#818cf8' : '#6366f1';
+  const color = val >= 75 ? '#ff8c94' : val >= 55 ? '#ff6b75' : '#e63946';
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
@@ -79,10 +79,10 @@ function ProductCard({ item, index, reviewData }) {
         overflow: 'hidden',
       }}
       onHoverStart={e => {}}
-      whileHover={{ borderColor: 'rgba(99,102,241,0.3)', boxShadow: '0 8px 30px rgba(99,102,241,0.1)' }}
+      whileHover={{ borderColor: 'rgba(220,20,60,0.3)', boxShadow: '0 8px 30px rgba(220,20,60,0.1)' }}
     >
       {/* Top ambient line */}
-      <div style={{ position: 'absolute', top: 0, left: '15%', right: '15%', height: '1px', background: 'linear-gradient(90deg, transparent, rgba(99,102,241,0.3), transparent)' }} />
+      <div style={{ position: 'absolute', top: 0, left: '15%', right: '15%', height: '1px', background: 'linear-gradient(90deg, transparent, rgba(220,20,60,0.3), transparent)' }} />
 
       {/* Product image */}
       {imgUrl && (
@@ -107,7 +107,7 @@ function ProductCard({ item, index, reviewData }) {
       {/* Price + availability */}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {priceDisplay && (
-          <span style={{ background: 'rgba(99,102,241,0.1)', color: '#a78bfa', border: '1px solid rgba(99,102,241,0.25)', fontWeight: 800, fontSize: '0.9rem', padding: '3px 12px', borderRadius: 9999 }}>
+          <span style={{ background: 'rgba(220,20,60,0.1)', color: '#ff8c94', border: '1px solid rgba(220,20,60,0.25)', fontWeight: 800, fontSize: '0.9rem', padding: '3px 12px', borderRadius: 9999 }}>
             {priceDisplay}
           </span>
         )}
@@ -120,7 +120,7 @@ function ProductCard({ item, index, reviewData }) {
 
       {/* Review highlights */}
       {highlights.length > 0 && (
-        <div style={{ background: 'rgba(99,102,241,0.04)', borderRadius: '10px', padding: '10px 12px', borderLeft: '2px solid rgba(99,102,241,0.3)' }}>
+        <div style={{ background: 'rgba(220,20,60,0.04)', borderRadius: '10px', padding: '10px 12px', borderLeft: '2px solid rgba(220,20,60,0.3)' }}>
           {highlights.map((h, i) => (
             <p key={i} style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.78rem', fontStyle: 'italic', lineHeight: 1.5, marginBottom: i < highlights.length - 1 ? '4px' : 0 }}>
               "{h}"
@@ -156,7 +156,7 @@ function ProductCard({ item, index, reviewData }) {
       {/* Confidence */}
       {item.confidence != null && (
         <div>
-          <span style={{ background: 'rgba(99,102,241,0.08)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.2)', fontSize: '0.65rem', fontWeight: 600, padding: '2px 9px', borderRadius: 9999 }}>
+          <span style={{ background: 'rgba(220,20,60,0.08)', color: '#ff6b75', border: '1px solid rgba(220,20,60,0.2)', fontSize: '0.65rem', fontWeight: 600, padding: '2px 9px', borderRadius: 9999 }}>
             {typeof item.confidence === 'number' ? item.confidence.toFixed(0) + '% confidence' : item.confidence}
           </span>
         </div>
@@ -168,12 +168,12 @@ function ProductCard({ item, index, reviewData }) {
           href={item.url} target="_blank" rel="noopener noreferrer"
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-            background: 'rgba(99,102,241,0.08)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.25)',
+            background: 'rgba(220,20,60,0.08)', color: '#ff6b75', border: '1px solid rgba(220,20,60,0.25)',
             borderRadius: '8px', padding: '8px', fontWeight: 700, fontSize: '0.78rem',
             textDecoration: 'none', marginTop: 'auto', transition: 'background 0.2s',
           }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.18)')}
-          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.08)')}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(220,20,60,0.18)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(220,20,60,0.08)')}
         >
           <ExternalLink size={13} /> View on Amazon
         </a>
@@ -193,7 +193,7 @@ export default function ComparisonView({ rec, agentOpinions }) {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          style={{ marginBottom: '20px', padding: '18px 22px', background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '14px', borderLeft: '3px solid rgba(99,102,241,0.5)' }}
+          style={{ marginBottom: '20px', padding: '18px 22px', background: 'rgba(220,20,60,0.04)', border: '1px solid rgba(220,20,60,0.15)', borderRadius: '14px', borderLeft: '3px solid rgba(220,20,60,0.5)' }}
         >
           <p style={{ color: 'rgba(255,255,255,0.7)', fontStyle: 'italic', fontSize: '0.92rem', lineHeight: 1.7, margin: 0 }}>{rec.verdict}</p>
         </motion.div>
@@ -203,12 +203,12 @@ export default function ComparisonView({ rec, agentOpinions }) {
       {(rec.best_value || rec.best_performance) && (
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '24px' }}>
           {rec.best_value && (
-            <span style={{ background: 'rgba(99,102,241,0.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.3)', fontWeight: 700, fontSize: '0.8rem', padding: '6px 16px', borderRadius: 9999, boxShadow: '0 0 12px rgba(99,102,241,0.15)' }}>
+            <span style={{ background: 'rgba(220,20,60,0.1)', color: '#ff6b75', border: '1px solid rgba(220,20,60,0.3)', fontWeight: 700, fontSize: '0.8rem', padding: '6px 16px', borderRadius: 9999, boxShadow: '0 0 12px rgba(220,20,60,0.15)' }}>
               💰 Best Value: {rec.best_value}
             </span>
           )}
           {rec.best_performance && (
-            <span style={{ background: 'rgba(167,139,250,0.1)', color: '#c4b5fd', border: '1px solid rgba(167,139,250,0.3)', fontWeight: 700, fontSize: '0.8rem', padding: '6px 16px', borderRadius: 9999, boxShadow: '0 0 12px rgba(167,139,250,0.15)' }}>
+            <span style={{ background: 'rgba(255,140,148,0.1)', color: '#ffadb3', border: '1px solid rgba(255,140,148,0.3)', fontWeight: 700, fontSize: '0.8rem', padding: '6px 16px', borderRadius: 9999, boxShadow: '0 0 12px rgba(255,140,148,0.15)' }}>
               🏆 Best Performance: {rec.best_performance}
             </span>
           )}

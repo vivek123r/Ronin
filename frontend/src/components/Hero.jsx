@@ -53,7 +53,7 @@ export default function Hero({ onSearch, status, progress }) {
       <div style={{
         position: 'absolute',
         inset: 0,
-        background: 'linear-gradient(to bottom, rgba(10,14,26,0.75) 0%, rgba(10,14,26,0.85) 60%, rgba(10,14,26,0.95) 100%)',
+        background: 'linear-gradient(to bottom, rgba(8,8,8,0.75) 0%, rgba(8,8,8,0.85) 60%, rgba(8,8,8,0.95) 100%)',
         zIndex: 1
       }} />
 
@@ -73,24 +73,24 @@ export default function Hero({ onSearch, status, progress }) {
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
           padding: '48px 40px 40px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,212,212,0.05)'
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(220,20,60,0.05)'
         }}>
           {/* Logo / Title */}
           <div style={{ textAlign: 'center', marginBottom: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '4px' }}>
-              <Zap size={28} style={{ color: '#00d4d4' }} />
+              <Zap size={28} style={{ color: '#e63946' }} />
               <h1 style={{
                 fontSize: '52px',
                 fontWeight: 900,
                 letterSpacing: '0.15em',
-                color: '#00d4d4',
+                color: '#e63946',
                 margin: 0,
-                textShadow: '0 0 30px #00d4d4, 0 0 60px rgba(0,212,212,0.4)',
+                textShadow: '0 0 30px #e63946, 0 0 60px rgba(220,20,60,0.4)',
                 lineHeight: 1
               }}>
                 RONIN
               </h1>
-              <Zap size={28} style={{ color: '#00d4d4', transform: 'scaleX(-1)' }} />
+              <Zap size={28} style={{ color: '#e63946', transform: 'scaleX(-1)' }} />
             </div>
             <p style={{
               color: '#94a3b8',
@@ -107,7 +107,7 @@ export default function Hero({ onSearch, status, progress }) {
           {/* Divider */}
           <div style={{
             height: '1px',
-            background: 'linear-gradient(to right, transparent, rgba(0,212,212,0.3), transparent)',
+            background: 'linear-gradient(to right, transparent, rgba(220,20,60,0.3), transparent)',
             margin: '24px 0'
           }} />
 
@@ -150,8 +150,8 @@ export default function Hero({ onSearch, status, progress }) {
                     transition: 'border-color 0.2s, box-shadow 0.2s'
                   }}
                   onFocus={e => {
-                    e.target.style.borderColor = 'rgba(0,212,212,0.5)'
-                    e.target.style.boxShadow = '0 0 0 3px rgba(0,212,212,0.1)'
+                    e.target.style.borderColor = 'rgba(220,20,60,0.5)'
+                    e.target.style.boxShadow = '0 0 0 3px rgba(220,20,60,0.1)'
                   }}
                   onBlur={e => {
                     e.target.style.borderColor = 'rgba(255,255,255,0.12)'
@@ -209,24 +209,24 @@ export default function Hero({ onSearch, status, progress }) {
                     type="button"
                     onClick={() => handlePill(pill)}
                     style={{
-                      background: 'rgba(0,212,212,0.08)',
-                      border: '1px solid rgba(0,212,212,0.2)',
+                      background: 'rgba(220,20,60,0.08)',
+                      border: '1px solid rgba(220,20,60,0.2)',
                       borderRadius: '20px',
                       padding: '6px 14px',
-                      color: '#00d4d4',
+                      color: '#e63946',
                       fontSize: '12px',
                       cursor: 'pointer',
                       transition: 'background 0.2s, border-color 0.2s, box-shadow 0.2s',
                       fontFamily: 'Inter, sans-serif'
                     }}
                     onMouseEnter={e => {
-                      e.currentTarget.style.background = 'rgba(0,212,212,0.15)'
-                      e.currentTarget.style.borderColor = 'rgba(0,212,212,0.5)'
-                      e.currentTarget.style.boxShadow = '0 0 12px rgba(0,212,212,0.2)'
+                      e.currentTarget.style.background = 'rgba(220,20,60,0.15)'
+                      e.currentTarget.style.borderColor = 'rgba(220,20,60,0.5)'
+                      e.currentTarget.style.boxShadow = '0 0 12px rgba(220,20,60,0.2)'
                     }}
                     onMouseLeave={e => {
-                      e.currentTarget.style.background = 'rgba(0,212,212,0.08)'
-                      e.currentTarget.style.borderColor = 'rgba(0,212,212,0.2)'
+                      e.currentTarget.style.background = 'rgba(220,20,60,0.08)'
+                      e.currentTarget.style.borderColor = 'rgba(220,20,60,0.2)'
                       e.currentTarget.style.boxShadow = 'none'
                     }}
                   >
@@ -246,8 +246,8 @@ export default function Hero({ onSearch, status, progress }) {
                 gap: '8px',
                 marginBottom: '10px'
               }}>
-                <Loader2 size={14} style={{ color: '#00d4d4', animation: 'spin 1s linear infinite' }} />
-                <span style={{ color: '#00d4d4', fontSize: '12px', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>
+                <Loader2 size={14} style={{ color: '#e63946', animation: 'spin 1s linear infinite' }} />
+                <span style={{ color: '#e63946', fontSize: '12px', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>
                   Agent Activity
                 </span>
               </div>
@@ -266,8 +266,8 @@ export default function Hero({ onSearch, status, progress }) {
                   <div
                     key={i}
                     style={{
-                      background: 'rgba(0,212,212,0.05)',
-                      border: '1px solid rgba(0,212,212,0.1)',
+                      background: 'rgba(220,20,60,0.05)',
+                      border: '1px solid rgba(220,20,60,0.1)',
                       borderRadius: '8px',
                       padding: '8px 12px',
                       fontSize: '13px',
@@ -279,7 +279,7 @@ export default function Hero({ onSearch, status, progress }) {
                     }}
                   >
                     <span style={{
-                      color: '#00d4d4',
+                      color: '#e63946',
                       fontSize: '10px',
                       marginTop: '3px',
                       flexShrink: 0
@@ -302,7 +302,7 @@ export default function Hero({ onSearch, status, progress }) {
               color: '#64748b',
               fontSize: '14px'
             }}>
-              <Loader2 size={16} style={{ color: '#00d4d4', animation: 'spin 1s linear infinite' }} />
+              <Loader2 size={16} style={{ color: '#e63946', animation: 'spin 1s linear infinite' }} />
               Initializing agents...
             </div>
           )}
@@ -320,7 +320,7 @@ export default function Hero({ onSearch, status, progress }) {
         input::placeholder { color: #475569; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(0,212,212,0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(220,20,60,0.3); border-radius: 4px; }
       `}</style>
     </div>
   )

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import LandingPage from './components/LandingPage'
 import ResultsPanel from './components/ResultsPanel'
 import HistorySidebar from './components/HistorySidebar'
+import SpiderFX from './components/SpiderFX'
 
 const HISTORY_KEY = 'ronin_history'
 
@@ -94,7 +95,8 @@ function App() {
   const showLanding = !showResults || status === 'idle'
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#03040a', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#080808', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }}>
+      <SpiderFX />
       <HistorySidebar
         isOpen={historyOpen}
         onToggle={() => setHistoryOpen(o => !o)}
@@ -127,7 +129,7 @@ function App() {
               <button
                 onClick={handleNewSearch}
                 style={{
-                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  background: 'linear-gradient(135deg, #e63946, #e63946)',
                   color: '#fff',
                   border: 'none',
                   borderRadius: '10px',
@@ -135,7 +137,7 @@ function App() {
                   fontWeight: 700,
                   cursor: 'pointer',
                   fontSize: '14px',
-                  boxShadow: '0 4px 20px rgba(99,102,241,0.4)',
+                  boxShadow: '0 4px 20px rgba(220,20,60,0.4)',
                 }}
               >
                 Try Again

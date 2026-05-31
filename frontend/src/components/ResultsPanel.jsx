@@ -1,6 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ArrowLeft, GitCompare, Loader2, Zap } from 'lucide-react';
+import { Search, ArrowLeft, GitCompare, Loader2 } from 'lucide-react';
+
+function SpiderIcon({ size = 16, color = '#fff' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <path d="M12 2C10.9 2 10 2.9 10 4C10 4.74 10.4 5.38 11 5.73V7H9C7.9 7 7 7.9 7 9V10H5.27C4.64 9.39 3.74 9 2.73 9C1.22 9 0 10.22 0 11.73C0 13.24 1.22 14.46 2.73 14.46C3.74 14.46 4.64 14.07 5.27 13.46H7V15C7 15.55 7.22 16.05 7.59 16.41L5 21H7L9 17H15L17 21H19L16.41 16.41C16.78 16.05 17 15.55 17 15V13.46H18.73C19.36 14.07 20.26 14.46 21.27 14.46C22.78 14.46 24 13.24 24 11.73C24 10.22 22.78 9 21.27 9C20.26 9 19.36 9.39 18.73 10H17V9C17 7.9 16.1 7 15 7H13V5.73C13.6 5.38 14 4.74 14 4C14 2.9 13.1 2 12 2ZM9 9H15V11H9V9ZM9 13H15V15H9V13Z"/>
+    </svg>
+  )
+}
 import WinnerCard from './WinnerCard';
 import ComparisonView from './ComparisonView';
 import RankedTable from './RankedTable';
@@ -31,13 +39,13 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#03040a', color: '#e2e8f0', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#080808', color: '#e2e8f0', fontFamily: 'Inter, sans-serif' }}>
       {/* Sticky header */}
       <div style={{
         position: 'sticky',
         top: 0,
         zIndex: 50,
-        background: 'rgba(3,4,10,0.85)',
+        background: 'rgba(8,8,8,0.85)',
         backdropFilter: 'blur(20px)',
         borderBottom: '1px solid rgba(255,255,255,0.05)',
         padding: '12px 24px',
@@ -73,14 +81,14 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
               alignItems: 'center',
               gap: '8px',
               background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(99,102,241,0.2)',
+              border: '1px solid rgba(220,20,60,0.2)',
               borderRadius: '10px',
               padding: '6px 12px',
               transition: 'border-color 0.2s, box-shadow 0.2s',
             }}
             onFocus={() => {}}
             >
-              <Search size={14} style={{ color: '#6366f1', flexShrink: 0 }} />
+              <Search size={14} style={{ color: '#e63946', flexShrink: 0 }} />
               <input
                 ref={inputRef}
                 type="text"
@@ -98,16 +106,16 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
                   fontFamily: 'Inter, sans-serif',
                 }}
               />
-              {isLoading && <Loader2 size={13} style={{ color: '#6366f1', animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
+              {isLoading && <Loader2 size={13} style={{ color: '#e63946', animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
             </div>
           </form>
 
           {/* Ronin logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <div style={{ width: '22px', height: '22px', borderRadius: '6px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Zap size={11} color="#fff" fill="#fff" />
+            <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'radial-gradient(circle, #e63946, #8b0000)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(220,20,60,0.5)' }}>
+              <SpiderIcon size={14} color="#fff" />
             </div>
-            <span style={{ fontWeight: 800, fontSize: '0.85rem', letterSpacing: '0.05em', color: '#fff' }}>RONIN</span>
+            <span style={{ fontWeight: 900, fontSize: '0.85rem', letterSpacing: '0.12em', color: '#fff', fontFamily: 'Space Grotesk, sans-serif' }}>RONIN</span>
           </div>
         </div>
       </div>
@@ -147,10 +155,10 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
             <button
               onClick={onNewSearch}
               style={{
-                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                background: 'linear-gradient(135deg, #e63946, #e63946)',
                 color: '#fff', border: 'none', borderRadius: '10px',
                 padding: '10px 24px', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(99,102,241,0.35)',
+                boxShadow: '0 4px 16px rgba(220,20,60,0.35)',
               }}
             >
               Try a different search
@@ -177,9 +185,9 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
                   disabled={isLoading}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: '8px',
-                    background: 'rgba(99,102,241,0.08)',
-                    border: '1px solid rgba(99,102,241,0.3)',
-                    color: '#818cf8',
+                    background: 'rgba(220,20,60,0.08)',
+                    border: '1px solid rgba(220,20,60,0.3)',
+                    color: '#ff6b75',
                     borderRadius: '10px',
                     padding: '9px 18px',
                     fontSize: '0.85rem', fontWeight: 600,
@@ -187,8 +195,8 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
                     opacity: isLoading ? 0.5 : 1,
                     transition: 'all 0.2s',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,20,60,0.16)'; e.currentTarget.style.borderColor = 'rgba(220,20,60,0.5)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,20,60,0.08)'; e.currentTarget.style.borderColor = 'rgba(220,20,60,0.3)' }}
                 >
                   <GitCompare size={15} />
                   Compare Top {Math.min(3, ranked.length)} Side by Side

@@ -30,7 +30,7 @@ export default function ProgressFeed({ messages, isLoading }) {
   return (
     <div style={{
       background: 'rgba(255,255,255,0.02)',
-      border: '1px solid rgba(99,102,241,0.1)',
+      border: '1px solid rgba(220,20,60,0.1)',
       borderRadius: '14px',
       padding: '14px 16px',
       marginBottom: '20px',
@@ -38,7 +38,7 @@ export default function ProgressFeed({ messages, isLoading }) {
       overflowY: 'auto',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-        {isLoading && <Loader2 size={12} style={{ color: '#6366f1', animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
+        {isLoading && <Loader2 size={12} style={{ color: '#e63946', animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
         <span style={{ color: '#475569', fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700 }}>
           {isLoading ? 'Agent Pipeline Running' : 'Pipeline Complete'}
         </span>
@@ -56,8 +56,8 @@ export default function ProgressFeed({ messages, isLoading }) {
             style={{
               display: 'flex', alignItems: 'flex-start', gap: '8px',
               padding: '5px 8px', borderRadius: '7px',
-              background: i === arr.length - 1 && isLoading ? 'rgba(99,102,241,0.05)' : 'transparent',
-              border: i === arr.length - 1 && isLoading ? '1px solid rgba(99,102,241,0.1)' : '1px solid transparent',
+              background: i === arr.length - 1 && isLoading ? 'rgba(220,20,60,0.05)' : 'transparent',
+              border: i === arr.length - 1 && isLoading ? '1px solid rgba(220,20,60,0.1)' : '1px solid transparent',
               animation: 'fadeIn 0.3s ease',
             }}
           >
@@ -71,10 +71,10 @@ export default function ProgressFeed({ messages, isLoading }) {
         {isLoading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 8px' }}>
             <span style={{ fontSize: '0.82rem' }}>⚙️</span>
-            <span style={{ color: '#6366f1', fontSize: '0.78rem' }}>Processing</span>
+            <span style={{ color: '#e63946', fontSize: '0.78rem' }}>Processing</span>
             <div style={{ display: 'flex', gap: '3px' }}>
               {[0,1,2].map(d => (
-                <span key={d} style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#6366f1', display: 'inline-block', animation: `pulse 1.4s ease-in-out ${d * 0.2}s infinite` }} />
+                <span key={d} style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#e63946', display: 'inline-block', animation: `pulse 1.4s ease-in-out ${d * 0.2}s infinite` }} />
               ))}
             </div>
           </div>
