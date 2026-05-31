@@ -1,16 +1,14 @@
 """
-Proper Multi-Agent Product Search
-- Supervisor dynamically routes to agents based on what's missing
-- Each agent runs a ReAct loop (reason → act → observe → repeat)
-- Agents write opinions/findings to a shared blackboard
-- Agents can request help from other agents via open_questions
-- Supervisor decides when confidence is high enough to conclude
+Multi-Agent Product Search
+- Direct linear routing: search → human_loop → parallel(review+price) → ranker
+- Product details fetched once in search agent, shared via state cache
+- Adaptive ranker: weights derived from query intent + per-product data quality
 """
 
 import os, json, operator, re
 from typing import TypedDict, Annotated, List, Dict, Any
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END, START
 import requests
 import warnings
@@ -19,8 +17,11 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from dotenv import load_dotenv
 load_dotenv()
 
+from tavily import TavilyClient
+tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+
 llm = ChatOpenAI(
-    model="openai/gpt-4o-mini",
+    model="deepseek/deepseek-v4-flash",
     openai_api_base="https://openrouter.ai/api/v1",
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
     temperature=0,
@@ -61,35 +62,39 @@ def extract_json(text: str) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def search_youtube(query: str, max_results: int = 2) -> list:
-    """Search YouTube for product reviews and fetch their transcripts"""
+    """Search YouTube via Google Cloud Data API v3 and fetch transcripts."""
     from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
     videos = []
     try:
-        url = "https://youtube138.p.rapidapi.com/search/"
-        headers = {
-            "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
-            "x-rapidapi-host": "youtube138.p.rapidapi.com"
-        }
-        params = {"q": f"{query} review", "hl": "en", "gl": "US"}
-        response = requests.get(url, headers=headers, params=params, timeout=5)
-        if response.status_code != 200:
-            print(f"⚠️  YouTube search HTTP {response.status_code}")
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params={
+                "part":       "snippet",
+                "q":          f"{query} review",
+                "type":       "video",
+                "maxResults": max_results,
+                "relevanceLanguage": "en",
+                "regionCode": "IN",
+                "key":        os.getenv("YOUTUBE_API_KEY"),
+            },
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            print(f"⚠️  YouTube search HTTP {resp.status_code}: {resp.text[:200]}")
             return []
 
-        contents = response.json().get("contents", [])
-        for item in contents:
-            video = item.get("video", item)
-            vid_id  = video.get("videoId")
-            title   = video.get("title", "")
-            channel = video.get("channelTitle") or (video.get("author") or {}).get("title", "")
+        for item in resp.json().get("items", []):
+            vid_id  = item.get("id", {}).get("videoId")
+            snippet = item.get("snippet", {})
+            title   = snippet.get("title", "")
+            channel = snippet.get("channelTitle", "")
             if not vid_id:
                 continue
 
             transcript_text = ""
             try:
                 raw = YouTubeTranscriptApi.get_transcript(vid_id, languages=["en", "en-US", "en-GB"])
-                snippet = raw[:120]
-                transcript_text = " ".join(seg["text"] for seg in snippet)
+                transcript_text = " ".join(seg["text"] for seg in raw[:120])
             except (NoTranscriptFound, TranscriptsDisabled):
                 transcript_text = "[No transcript available]"
             except Exception as e:
@@ -102,8 +107,6 @@ def search_youtube(query: str, max_results: int = 2) -> list:
                 "url":        f"https://www.youtube.com/watch?v={vid_id}",
                 "transcript": transcript_text,
             })
-            if len(videos) >= max_results:
-                break
 
     except Exception as e:
         print(f"⚠️  YouTube search failed: {e}")
@@ -124,7 +127,7 @@ def get_amazon_reviews_by_asin(asin: str, region: str = "IN") -> dict:
             "https://real-time-amazon-data.p.rapidapi.com/product-details",
             headers=headers,
             params={"asin": asin, "country": region},
-            timeout=10,
+            timeout=20,
         )
         if detail_resp.status_code != 200:
             return {}
@@ -148,70 +151,109 @@ def get_amazon_reviews_by_asin(asin: str, region: str = "IN") -> dict:
             "rating_distribution": detail_data.get("rating_distribution", {}),
             "reviews":            review_texts,
             "about_product":      detail_data.get("about_product", []),
+            "product_price":      detail_data.get("product_price") or detail_data.get("product_minimum_offer_price"),
+            "product_url":        detail_data.get("product_url", ""),
         }
     except Exception as e:
         print(f"⚠️  get_amazon_reviews_by_asin failed: {e}")
         return {}
 
 
-def get_amazon_reviews(product_name: str, region: str = "IN") -> dict:
-    """Fetch Amazon reviews by product name (fallback when ASIN is unknown)"""
+
+
+def _resolve_product_name(name: str) -> tuple:
+    """Search Amazon for name, use LLM to pick the best-matching result. Returns (title, asin)."""
     try:
         headers = {
             "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
             "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com",
         }
-        search_resp = requests.get(
+        resp = requests.get(
             "https://real-time-amazon-data.p.rapidapi.com/search",
             headers=headers,
-            params={"query": product_name, "page": "1", "country": region},
-            timeout=10,
+            params={"query": name, "page": "1", "country": "IN"},
+            timeout=15,
         )
-        if search_resp.status_code != 200:
-            return {}
+        prods = resp.json().get("data", {}).get("products", [])[:5] if resp.status_code == 200 else []
+        if not prods:
+            return name, ""
 
-        products = search_resp.json().get("data", {}).get("products", [])
-        if not products:
-            return {}
+        candidates = [{"index": i, "title": p.get("product_title", ""), "asin": p.get("asin", "")}
+                      for i, p in enumerate(prods)]
 
-        asin = products[0].get("asin")
-        if not asin:
-            return {}
+        pick = llm.invoke([
+            SystemMessage(
+                "Pick the Amazon product that best matches what the user asked for. "
+                "Consider exact model name, generation, and variant. "
+                "Return ONLY raw JSON: {\"index\": 0}  (0-based index into the candidates list)"
+            ),
+            HumanMessage(
+                f"User wants: \"{name}\"\n\nCandidates:\n{json.dumps(candidates, indent=2)}"
+            ),
+        ])
+        idx  = extract_json(pick.content).get("index", 0)
+        best = candidates[min(int(idx), len(candidates) - 1)]
 
-        return get_amazon_reviews_by_asin(asin, region)
+        # Validate: does the picked result actually match what the user asked for?
+        validation = llm.invoke([
+            SystemMessage(
+                "You are a product match validator. "
+                "Decide if the resolved Amazon product is genuinely the same product the user asked for. "
+                "Be strict about model numbers and generations — 'iPhone 15' ≠ 'iPhone 16'. "
+                "Return ONLY raw JSON: {\"match\": true|false, \"reason\": \"short explanation\"}"
+            ),
+            HumanMessage(
+                f"User asked for: \"{name}\"\n"
+                f"Amazon resolved to: \"{best['title']}\"\n"
+                f"Is this the correct product?"
+            ),
+        ])
+        val = extract_json(validation.content)
+        if val.get("match") is False:
+            print(f"  ⚠️  LLM validation failed for '{name}': {val.get('reason', '')}")
+            print(f"     Resolved to: '{best['title']}' — this may not be the right product")
+            return name, ""   # return empty asin so duplicate validator catches it
 
+        return best["title"], best["asin"]
     except Exception as e:
-        print(f"⚠️  Amazon reviews fetch failed: {e}")
-    return {}
+        print(f"  ⚠️  _resolve_product_name failed for \"{name}\": {e}")
+        return name, ""
 
 
-def search_amazon_price(product_name: str, region: str = "IN") -> dict:
-    """Search Amazon prices using RapidAPI Real-Time Amazon Data"""
+def _extract_asin_from_url(url: str) -> str:
+    """Extract ASIN from Amazon URL like /dp/B0XXXXXX or /gp/product/B0XXXXXX"""
+    match = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', url)
+    return match.group(1) if match else ""
+
+
+def _fetch_price_by_search(title: str, asin: str = "") -> dict:
+    """Search Amazon for a product price when product-details returned no price."""
     try:
         headers = {
             "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
             "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com",
         }
-        response = requests.get(
+        resp = requests.get(
             "https://real-time-amazon-data.p.rapidapi.com/search",
             headers=headers,
-            params={"query": product_name, "page": "1", "country": region},
-            timeout=10,
+            params={"query": title[:80], "page": "1", "country": "IN"},
+            timeout=15,
         )
-        if response.status_code == 200:
-            products = response.json().get("data", {}).get("products", [])[:1]
-            if products:
-                p = products[0]
-                return {
-                    "name":      p.get("product_title"),
-                    "price":     p.get("product_price"),
-                    "rating":    p.get("product_star_rating"),
-                    "reviews":   p.get("product_num_ratings"),
-                    "url":       p.get("product_url"),
-                    "available": p.get("product_minimum_offer_price") is not None,
-                }
+        if resp.status_code == 200:
+            prods = resp.json().get("data", {}).get("products", [])
+            # prefer exact ASIN match with a real price
+            for p in prods[:5]:
+                if asin and p.get("asin") == asin:
+                    price = p.get("product_price") or p.get("product_minimum_offer_price", "")
+                    if price:
+                        return {"price": price}
+            # take first result that actually has a price
+            for p in prods[:5]:
+                price = p.get("product_price") or p.get("product_minimum_offer_price", "")
+                if price:
+                    return {"price": price}
     except Exception as e:
-        print(f"⚠️  Amazon price search failed: {e}")
+        print(f"  ⚠️  Price fallback search failed: {e}")
     return {}
 
 
@@ -226,20 +268,60 @@ def extract_price_value(price_str: str) -> float:
         return 0.0
 
 
+def search_tavily(query: str, max_results: int = 15) -> list:
+    """Search the web via Tavily and extract product name candidates using LLM."""
+    try:
+        results = tavily_client.search(
+            query=f"{query} best India",
+            max_results=max_results,
+            include_answer=True,
+        )
+        snippets = []
+        for r in results.get("results", []):
+            title   = r.get("title", "")
+            content = r.get("content", "")[:300]
+            snippets.append(f"- {title}: {content}")
+
+        if not snippets:
+            return []
+
+        response = llm.invoke([
+            SystemMessage(content=(
+                "You are a product extraction assistant. "
+                "Given web search results about products, extract a list of specific product model names. "
+                "Return ONLY raw JSON — no markdown, no backticks:\n"
+                '{"products": ["Product Model Name 1", "Product Model Name 2", ...]}'
+            )),
+            HumanMessage(content=(
+                f"Query: {query}\n\nWeb search results:\n"
+                + "\n".join(snippets)
+                + "\n\nExtract up to 15 specific product names mentioned. "
+                  "Include brand and model number where available."
+            )),
+        ])
+        parsed = extract_json(response.content)
+        return parsed.get("products", [])
+    except Exception as e:
+        print(f"⚠️  Tavily search failed: {e}")
+        return []
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SHARED BLACKBOARD
 # ─────────────────────────────────────────────────────────────────────────────
 
 class Blackboard(TypedDict):
     query:                str
+    search_keyword:       str          # clean product keyword for Amazon search
+    mode:                 str          # "discovery" | "comparison"
+    comparison_products:  List[str]    # populated by intent classifier in comparison mode
+    budget_type:          str          # "under" | "around" | "range" | "none"
+    budget_min:           int          # lower bound in INR (0 if not a range)
+    budget_max:           int          # upper bound in INR (0 if no budget stated)
     raw_findings:         Annotated[List[dict], operator.add]
     agent_opinions:       Dict[str, Any]
-    open_questions:       Annotated[List[str], operator.add]
-    answered_questions:   Annotated[List[str], operator.add]
     confidence:           Dict[str, float]
-    next_agent:           str
-    supervisor_notes:     Annotated[List[str], operator.add]
-    iteration:            int
+    notes:                Annotated[List[str], operator.add]
     final_recommendation: Dict[str, Any]
 
 
@@ -247,156 +329,80 @@ class Blackboard(TypedDict):
 # REACT LOOP HELPER — used by review_agent for analyze / done actions
 # ─────────────────────────────────────────────────────────────────────────────
 
-def react_loop(agent_name: str, system_prompt: str, state: Blackboard,
-               max_steps: int = 3) -> tuple[dict, float]:
-    system_prompt += "\n\nCRITICAL: Always respond with raw JSON only. No markdown, no backticks, no explanation."
-
-    history  = []
-    findings = {}
-    confidence = 0.0
-
-    context = {
-        "query":              state["query"],
-        "open_questions":     state.get("open_questions", []),
-        "other_agents":       state.get("agent_opinions", {}),
-        "my_findings_so_far": findings,
-    }
-
-    for step in range(max_steps):
-        thought_prompt = f"""
-Blackboard context: {json.dumps(context)}
-Step {step+1}/{max_steps}
-
-Respond with ONLY raw JSON (no markdown, no backticks):
-{{
-  "thought": "what I know, what's missing, what I should do next",
-  "action": "analyze" | "answer_question" | "done",
-  "action_input": "data to analyze OR question being answered",
-  "findings_update": {{...any new findings to add...}},
-  "confidence": 0.0-1.0,
-  "questions_for_others": ["optional questions for other agents"]
-}}"""
-
-        response = llm.invoke([
-            SystemMessage(content=system_prompt),
-            *history,
-            HumanMessage(content=thought_prompt),
-        ])
-
-        step_result = extract_json(response.content)
-        if not step_result:
-            print(f"⚠️  [{agent_name}] step {step+1} parse failed — skipping step")
-            continue
-
-        history.append(AIMessage(content=response.content))
-
-        action = step_result.get("action", "done")
-        observation = ""
-
-        if action == "analyze":
-            observation = f"Analysis input received: {step_result.get('action_input','')}"
-        elif action == "answer_question":
-            observation = f"Answering: {step_result.get('action_input','')}"
-        elif action == "done":
-            findings.update(step_result.get("findings_update", {}))
-            confidence = step_result.get("confidence", 0.5)
-            break
-
-        findings.update(step_result.get("findings_update", {}))
-        confidence = step_result.get("confidence", 0.0)
-        context["my_findings_so_far"] = findings
-        context["last_observation"]   = observation
-
-        history.append(HumanMessage(content=f"Observation: {observation}"))
-
-        if confidence >= 0.85:
-            break
-
-    return findings, confidence
-
-
 # ─────────────────────────────────────────────────────────────────────────────
-# SUPERVISOR
+# SEARCH AGENT
 # ─────────────────────────────────────────────────────────────────────────────
 
-def supervisor_node(state: Blackboard) -> dict:
-    opinions   = state.get("agent_opinions", {})
-    confidence = state.get("confidence", {})
-    questions  = state.get("open_questions", [])
-    iteration  = state.get("iteration", 0)
-
-    system = SystemMessage(content="""You are a supervisor coordinating product research agents.
-You decide who to call next based on what's missing or uncertain.
-Agents available: search_agent, review_agent, price_agent, ranker_agent
-Respond with JSON only:
-{
-  "reasoning": "what's been done, what's missing",
-  "next_agent": "search_agent|review_agent|price_agent|ranker_agent|DONE",
-  "instruction": "specific task for that agent",
-  "ready_to_conclude": true|false
-}""")
-
-    human = HumanMessage(content=json.dumps({
-        "query":             state["query"],
-        "iteration":         iteration,
-        "agent_opinions":    opinions,
-        "confidence_scores": confidence,
-        "open_questions":    questions,
-        "findings_count":    len(state.get("raw_findings", [])),
-    }))
-
-    response = llm.invoke([system, human])
-
+def _score_candidate(candidate: dict, tavily_names: list) -> float:
+    """Score an Amazon candidate: +2 if web-recommended, +0-5 from Amazon rating."""
+    score = 0.0
+    title_lower = candidate["title"].lower()
+    for t in tavily_names:
+        if any(word in title_lower for word in t.lower().split() if len(word) > 4):
+            score += 2.0
+            break
     try:
-        decision = json.loads(response.content)
-    except Exception:
-        order      = ["search_agent", "review_agent", "price_agent", "ranker_agent"]
-        done_agents = list(opinions.keys())
-        next_a     = next((a for a in order if a not in done_agents), "ranker_agent")
-        decision   = {"next_agent": next_a, "reasoning": "fallback cycling",
-                      "ready_to_conclude": len(done_agents) >= 3}
+        score += float(candidate.get("rating") or 0)
+    except (ValueError, TypeError):
+        pass
+    return score
 
-    return {
-        "next_agent":       decision.get("next_agent", "ranker_agent"),
-        "iteration":        iteration + 1,
-        "supervisor_notes": [f"[Supervisor i{iteration}] → {decision.get('next_agent')} "
-                             f"| {decision.get('reasoning','')[:80]}"],
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SEARCH AGENT — uses Amazon search directly, no Tavily
-# ─────────────────────────────────────────────────────────────────────────────
 
 def search_agent_node(state: Blackboard) -> dict:
     """
-    Finds candidate products by:
-      a) Querying Amazon search for the user's query (gets real titles + ASINs)
-      b) Asking the LLM to pick the most relevant 5 from those results
+    1. Amazon broad search (1 RapidAPI call)
+    2. Tavily web search for hints (1 Tavily call)
+    3. LLM scores + picks 5 products (1 LLM call)
+    4. Fetch product-details for each ASIN (5 RapidAPI calls) — cached for review+price agents
     """
-    query = state["query"]
-    print(f"  🔎 Searching Amazon for: {query}")
+    query          = state["query"]
+    search_keyword = state.get("search_keyword") or query
+    asin_map: dict = {}
 
-    # Step 1: pull raw Amazon search results
+    # Step 1: Broad Amazon search (clean keyword, not raw query)
+    print(f"  🔎 Amazon broad search for: {search_keyword}")
+    amz_headers = {
+        "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
+        "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com",
+    }
+    amz_params = {"query": search_keyword, "page": "1", "country": "IN", "sort_by": "RELEVANCE"}
+    btype = state.get("budget_type", "none") or "none"
+    bmin  = state.get("budget_min", 0) or 0
+    bmax  = state.get("budget_max", 0) or 0
+    if btype != "none" and bmax > 0:
+        if btype == "around":
+            amz_params["min_price"] = int(bmax * 0.80)
+            amz_params["max_price"] = int(bmax * 1.20)
+        elif btype == "under":
+            amz_params["min_price"] = int(bmax * 0.80)
+            amz_params["max_price"] = bmax
+        else:
+            amz_params["min_price"] = bmin
+            amz_params["max_price"] = bmax
+        print(f"  💰 Price filter to API: ₹{amz_params.get('min_price',0):,} – ₹{amz_params['max_price']:,}")
+    amz_url = "https://real-time-amazon-data.p.rapidapi.com/search"
     try:
-        headers = {
-            "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
-            "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com",
-        }
-        resp = requests.get(
-            "https://real-time-amazon-data.p.rapidapi.com/search",
-            headers=headers,
-            params={"query": query, "page": "1", "country": "IN", "sort_by": "RELEVANCE"},
-            timeout=10,
-        )
+        resp = requests.get(amz_url, headers=amz_headers, params=amz_params, timeout=10)
         raw_products = resp.json().get("data", {}).get("products", []) if resp.status_code == 200 else []
+        # If price-filtered but fewer than 5 results, retry without price params
+        if len(raw_products) < 5 and "min_price" in amz_params:
+            print(f"  🔄 Only {len(raw_products)} results with price filter — retrying without...")
+            amz_params.pop("min_price", None)
+            amz_params.pop("max_price", None)
+            resp2 = requests.get(amz_url, headers=amz_headers, params=amz_params, timeout=10)
+            raw_products = resp2.json().get("data", {}).get("products", []) if resp2.status_code == 200 else raw_products
+        # Fallback: retry with raw query if clean keyword returned nothing
+        if not raw_products and search_keyword != query:
+            print(f"  🔄 Retrying Amazon with full query...")
+            amz_params["query"] = query
+            resp3 = requests.get(amz_url, headers=amz_headers, params=amz_params, timeout=10)
+            raw_products = resp3.json().get("data", {}).get("products", []) if resp3.status_code == 200 else []
+        print(f"  ✅ Amazon returned {len(raw_products)} raw results")
     except Exception as e:
         print(f"  ⚠️  Amazon search failed: {e}")
         raw_products = []
 
-    raw_products = raw_products[:15]
-
-    candidates = [
+    amazon_candidates = [
         {
             "title":   p.get("product_title", ""),
             "asin":    p.get("asin", ""),
@@ -404,52 +410,97 @@ def search_agent_node(state: Blackboard) -> dict:
             "rating":  p.get("product_star_rating", ""),
             "reviews": p.get("product_num_ratings", ""),
         }
-        for p in raw_products
-        if p.get("product_title")
+        for p in raw_products[:20]
+        if p.get("product_title") and p.get("asin")  # only keep products with a valid ASIN
     ]
+    for c in amazon_candidates:
+        asin_map[c["title"]] = c["asin"]
 
-    # Step 2: LLM picks the 5 most relevant, distinct products
-    system = (
-        "You are a product selection assistant. "
-        "Given a list of Amazon search results and the user's original query, "
-        "pick the 5 most relevant, distinct products (no duplicates / variants). "
-        "Return ONLY raw JSON — no markdown, no backticks:\n"
-        '{"products": ["Exact Product Title 1", "Exact Product Title 2", ...]}'
-    )
-    human_content = (
-        f"Query: {query}\n\n"
-        f"Amazon results:\n{json.dumps(candidates, indent=2)}\n\n"
-        "Return the 5 best matching products as a JSON list of their exact titles."
-    )
+    if not amazon_candidates:
+        print("  ❌ No candidates found — check RAPIDAPI_KEY")
+        empty = {"products": [], "asin_map": {}, "product_cache": {}, "confidence": 0.1}
+        return {
+            "raw_findings":   [{"agent": "search_agent", "data": empty}],
+            "agent_opinions": {**state.get("agent_opinions", {}), "search_agent": empty},
+            "confidence":     {**state.get("confidence", {}), "search_agent": 0.1},
+            "notes":          ["[Search] No products found — check API keys"],
+        }
+
+    # Step 2: Tavily — web recommendation hints only, no extra API calls
+    # Step 2: LLM picks 5 from top Amazon candidates (sorted by rating)
+    top_candidates = sorted(amazon_candidates, key=lambda c: float(c.get("rating") or 0), reverse=True)[:15]
 
     response = llm.invoke([
-        SystemMessage(content=system),
-        HumanMessage(content=human_content),
+        SystemMessage(content=(
+            "You are a product selection assistant. "
+            "Pick the 5 most relevant, distinct products (no duplicates/variants) matching the query. "
+            "Return ONLY raw JSON — no markdown, no backticks:\n"
+            '{"products": ["Exact Product Title 1", ...]}'
+        )),
+        HumanMessage(content=(
+            f"Query: {query}\n\n"
+            f"Amazon candidates:\n{json.dumps(top_candidates, indent=2)}\n\n"
+            "Return the 5 best as a JSON list of their exact Amazon titles."
+        )),
     ])
 
-    parsed   = extract_json(response.content)
-    products = parsed.get("products", [p["title"] for p in candidates[:5]])
+    parsed      = extract_json(response.content)
+    llm_picks   = parsed.get("products", [c["title"] for c in top_candidates[:5]])
 
-    # Step 3: build ASIN map for downstream agents
-    asin_map = {p["title"]: p["asin"] for p in candidates if p["asin"]}
+    # Resolve LLM titles back to exact Amazon titles (LLM sometimes rewrites them slightly)
+    # Match each LLM pick to the nearest Amazon candidate title by shared word overlap
+    amazon_titles = [c["title"] for c in amazon_candidates]
+
+    def _best_match(llm_title: str, candidates: list) -> str:
+        llm_words = set(llm_title.lower().split())
+        best, best_score = llm_title, 0
+        for t in candidates:
+            score = len(llm_words & set(t.lower().split()))
+            if score > best_score:
+                best, best_score = t, score
+        return best
+
+    products = [_best_match(p, amazon_titles) for p in llm_picks]
+    # Deduplicate while preserving order
+    seen = set()
+    products = [p for p in products if not (p in seen or seen.add(p))]
+
+    # Step 4: Fetch product-details in parallel — one thread per product
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    print(f"  📦 Fetching product details for {len(products)} products in parallel…")
+    product_cache: dict = {}
+
+    def _fetch(product):
+        asin = asin_map.get(product)
+        if not asin:
+            return product, None
+        data = get_amazon_reviews_by_asin(asin)
+        return product, data or None
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_fetch, p): p for p in products}
+        for future in as_completed(futures):
+            product, data = future.result()
+            if data:
+                product_cache[product] = data
+                print(f"     ✅ Cached: {product[:60]}")
+            else:
+                print(f"     ⚠️  No details for: {product[:60]}")
 
     formatted_findings = {
         "products":      products,
-        "product_count": len(products),
         "asin_map":      asin_map,
+        "product_cache": product_cache,
         "confidence":    0.9 if products else 0.1,
     }
 
-    current_opinions   = state.get("agent_opinions", {})
-    current_confidence = state.get("confidence", {})
-
-    print(f"  ✅ Found {len(products)} products via Amazon search")
+    print(f"  ✅ Selected {len(products)} products | {len(product_cache)} cached")
 
     return {
-        "raw_findings":     [{"agent": "search_agent", "data": formatted_findings}],
-        "agent_opinions":   {**current_opinions,   "search_agent": formatted_findings},
-        "confidence":       {**current_confidence, "search_agent": formatted_findings["confidence"]},
-        "supervisor_notes": [f"[Search Agent] Found {len(products)} products via Amazon | confidence=0.90"],
+        "raw_findings":   [{"agent": "search_agent", "data": formatted_findings}],
+        "agent_opinions": {**state.get("agent_opinions", {}), "search_agent": formatted_findings},
+        "confidence":     {**state.get("confidence", {}), "search_agent": formatted_findings["confidence"]},
+        "notes":          [f"[Search] {len(products)} products selected | {len(product_cache)} details cached"],
     }
 
 
@@ -461,12 +512,13 @@ def human_loop_node(state: Blackboard) -> dict:
     search_results = state.get("agent_opinions", {}).get("search_agent", {})
     products       = list(search_results.get("products", []))
     asin_map       = dict(search_results.get("asin_map", {}))
+    product_cache  = dict(search_results.get("product_cache", {}))
 
     if not products:
         print("⚠️  No products to confirm")
         return {
             "agent_opinions":   state.get("agent_opinions", {}),
-            "supervisor_notes": ["[Human Loop] No products found"],
+            "notes": ["[Human Loop] No products found"],
         }
 
     print(f"\n{'─'*60}")
@@ -503,36 +555,16 @@ def human_loop_node(state: Blackboard) -> dict:
 
             for name in raw_additions:
                 print(f"  🔎 Looking up \"{name}\" on Amazon…")
-                try:
-                    headers = {
-                        "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
-                        "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com",
-                    }
-                    resp = requests.get(
-                        "https://real-time-amazon-data.p.rapidapi.com/search",
-                        headers=headers,
-                        params={"query": name, "page": "1", "country": "IN"},
-                        timeout=10,
-                    )
-                    amz_products = (
-                        resp.json().get("data", {}).get("products", [])
-                        if resp.status_code == 200 else []
-                    )
-                except Exception as e:
-                    print(f"  ⚠️  Amazon lookup failed for \"{name}\": {e}")
-                    amz_products = []
-
-                if amz_products:
-                    best          = amz_products[0]
-                    resolved_title = best.get("product_title", name)
-                    resolved_asin  = best.get("asin", "")
-                    products.append(resolved_title)
-                    if resolved_asin:
-                        asin_map[resolved_title] = resolved_asin
-                    print(f"  ✅ Resolved to: \"{resolved_title}\" (ASIN: {resolved_asin or 'n/a'})")
+                resolved_title, resolved_asin = _resolve_product_name(name)
+                products.append(resolved_title)
+                if resolved_asin:
+                    asin_map[resolved_title] = resolved_asin
+                    detail = get_amazon_reviews_by_asin(resolved_asin)
+                    if detail:
+                        product_cache[resolved_title] = detail
+                    print(f"  ✅ Resolved to: \"{resolved_title}\" (ASIN: {resolved_asin})")
                 else:
-                    products.append(name)
-                    print(f"  ⚠️  Not found on Amazon — adding as-is: \"{name}\"")
+                    print(f"  ⚠️  Not found on Amazon — adding as-is: \"{resolved_title}\"")
 
             print(f"  📦 Total after additions: {len(products)}")
 
@@ -547,12 +579,12 @@ def human_loop_node(state: Blackboard) -> dict:
         else:
             print("❌ Please enter 'y' or 'n'.")
 
-    updated_search   = {**search_results, "products": products, "asin_map": asin_map}
+    updated_search   = {**search_results, "products": products, "asin_map": asin_map, "product_cache": product_cache}
     updated_opinions = {**state.get("agent_opinions", {}), "search_agent": updated_search}
 
     return {
-        "agent_opinions":   updated_opinions,
-        "supervisor_notes": [f"[Human Loop] Confirmed {len(products)} products for analysis"],
+        "agent_opinions": updated_opinions,
+        "notes":          [f"[Human Loop] Confirmed {len(products)} products for analysis"],
     }
 
 
@@ -561,111 +593,94 @@ def human_loop_node(state: Blackboard) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def review_agent_node(state: Blackboard) -> dict:
-    system = """You are a review and sentiment analyst. Your job:
+    system = """You are a review and sentiment analyst.
 - Analyse real Amazon customer reviews and YouTube video transcripts
 - Score each product 0-100 based on what real users and reviewers actually said
-- Extract concrete benefits and losses from the review text
 - Weight verified Amazon purchases heavily; treat YouTube transcripts as expert opinion
 - Be specific — quote or paraphrase actual review content where possible
-
-Output JSON:
+Return ONLY raw JSON:
 {
-  "products_analyzed": {
-    "product_name": {
-      "rating": 85,
-      "benefits": ["benefit1", "benefit2"],
-      "losses": ["loss1", "loss2"],
-      "sentiment": "positive/neutral/negative",
-      "confidence": 0.85,
-      "review_highlights": ["key quote 1", "key quote 2"]
-    }
-  },
-  "questions_for_others": [],
-  "answers_provided": []
-}"""
-
-    search_results = state.get("agent_opinions", {}).get("search_agent", {})
-    products       = search_results.get("products", [])
-    asin_map       = search_results.get("asin_map", {})
-
-    if not products:
-        print("⚠️  [Review Agent] No products from search agent")
-        return {
-            "agent_opinions": {**state.get("agent_opinions", {}), "review_agent": {}},
-            "confidence":     {**state.get("confidence", {}),     "review_agent": 0.0},
-            "supervisor_notes": ["[Review Agent] No products to review"],
-        }
-
-    findings = {"products_analyzed": {}}
-
-    for product in products[:5]:
-        print(f"  📺 Reviewing: {product}")
-
-        yt_results     = search_youtube(product, max_results=2)
-
-        # Use ASIN directly if we have it, else fall back to name search
-        asin = asin_map.get(product)
-        amazon_reviews = get_amazon_reviews_by_asin(asin) if asin else get_amazon_reviews(product)
-
-        yt_section = ""
-        for v in yt_results:
-            transcript_snippet = v["transcript"][:1500] if v["transcript"] else "[none]"
-            yt_section += f"\n### YouTube: {v['title']} ({v['channel']})\nTranscript excerpt:\n{transcript_snippet}\n"
-
-        amz_section = ""
-        if amazon_reviews:
-            amz_section = (
-                f"\n### Amazon  ({amazon_reviews.get('avg_rating','?')}⭐, "
-                f"{amazon_reviews.get('num_ratings','?')} ratings)\n"
-                f"Rating distribution: {amazon_reviews.get('rating_distribution', {})}\n"
-            )
-            for r in amazon_reviews.get("reviews", []):
-                verified_tag = "✅ Verified" if r["verified"] else "Unverified"
-                amz_section += f"- [{r['stars']}★ {verified_tag}] {r['title']}: {r['body'][:300]}\n"
-
-        synthesis_prompt = f"""
-Product: {product}
-
-{yt_section if yt_section else "No YouTube transcripts found."}
-
-{amz_section if amz_section else "No Amazon reviews found."}
-
-Based on the real review data above, return ONLY raw JSON:
-{{
   "rating": 0-100,
   "benefits": ["..."],
   "losses": ["..."],
   "sentiment": "positive|neutral|negative",
   "confidence": 0.0-1.0,
-  "review_highlights": ["key quote or paraphrase 1", "key quote 2"]
-}}"""
+  "review_highlights": ["key quote 1", "key quote 2"]
+}"""
+
+    search_results = state.get("agent_opinions", {}).get("search_agent", {})
+    products       = search_results.get("products", [])
+    product_cache  = search_results.get("product_cache", {})
+
+    if not products:
+        print("⚠️  [Review Agent] No products from search agent")
+        return {
+            "agent_opinions": {**state.get("agent_opinions", {}), "review_agent": {}},
+            "confidence":     {**state.get("confidence", {}), "review_agent": 0.0},
+            "notes":          ["[Review] No products to review"],
+        }
+
+    findings = {"products_analyzed": {}}
+
+    def _review_product(product):
+        print(f"  📺 Reviewing: {product[:70]}")
+        yt_results     = search_youtube(product, max_results=4)
+        amazon_reviews = product_cache.get(product, {})
+
+        yt_section = ""
+        for v in yt_results:
+            snippet = v["transcript"][:1500] if v["transcript"] else "[none]"
+            yt_section += f"\n### YouTube: {v['title']} ({v['channel']})\n{snippet}\n"
+
+        amz_section = ""
+        if amazon_reviews:
+            amz_section = (
+                f"\n### Amazon ({amazon_reviews.get('avg_rating','?')}⭐, "
+                f"{amazon_reviews.get('num_ratings','?')} ratings)\n"
+                f"Rating distribution: {amazon_reviews.get('rating_distribution', {})}\n"
+            )
+            for r in amazon_reviews.get("reviews", []):
+                tag = "✅ Verified" if r.get("verified") else "Unverified"
+                amz_section += f"- [{r.get('stars','?')}★ {tag}] {r.get('title','')}: {r.get('body','')[:300]}\n"
 
         response = llm.invoke([
             SystemMessage(content=system),
-            HumanMessage(content=synthesis_prompt),
+            HumanMessage(content=(
+                f"Product: {product}\n\n"
+                f"{yt_section or 'No YouTube transcripts found.'}\n\n"
+                f"{amz_section or 'No Amazon reviews found.'}\n\n"
+                "Return ONLY raw JSON."
+            )),
         ])
 
         result = extract_json(response.content)
-        if result:
-            findings["products_analyzed"][product] = result
-            print(f"     ✅ Rating: {result.get('rating', '?')}/100  |  "
-                  f"YT videos: {len(yt_results)}  |  "
-                  f"Amazon reviews: {len(amazon_reviews.get('reviews', []))}")
-        else:
-            print(f"     ❌ Could not parse review for {product}")
+        if not result:
+            result = {
+                "rating": 50, "benefits": [], "losses": ["Limited review data available"],
+                "sentiment": "neutral", "confidence": 0.3, "review_highlights": [],
+            }
+            print(f"     ⚠️  JSON parse failed — fallback 50/100")
 
-    current_opinions   = state.get("agent_opinions", {})
-    current_confidence = state.get("confidence", {})
-    avg_confidence     = (
+        print(f"     ✅ Rating: {result.get('rating','?')}/100 | YT: {len(yt_results)} | Reviews: {len(amazon_reviews.get('reviews', []))}")
+        return product, result
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_review_product, p): p for p in products[:5]}
+        for future in as_completed(futures):
+            product, result = future.result()
+            findings["products_analyzed"][product] = result
+
+    avg_confidence = (
         sum(v.get("confidence", 0) for v in findings["products_analyzed"].values())
         / max(len(findings["products_analyzed"]), 1)
     )
 
     return {
-        "raw_findings":     [{"agent": "review_agent", "data": findings}],
-        "agent_opinions":   {**current_opinions,   "review_agent": findings},
-        "confidence":       {**current_confidence, "review_agent": avg_confidence},
-        "supervisor_notes": [f"[Review Agent] Analysed {len(findings['products_analyzed'])} products | confidence={avg_confidence:.2f}"],
+        "raw_findings":   [{"agent": "review_agent", "data": findings}],
+        "agent_opinions": {**state.get("agent_opinions", {}), "review_agent": findings},
+        "confidence":     {**state.get("confidence", {}), "review_agent": avg_confidence},
+        "notes":          [f"[Review] {len(findings['products_analyzed'])} products | confidence={avg_confidence:.2f}"],
     }
 
 
@@ -676,98 +691,71 @@ Based on the real review data above, return ONLY raw JSON:
 def price_agent_node(state: Blackboard) -> dict:
     search_results = state.get("agent_opinions", {}).get("search_agent", {})
     products       = search_results.get("products", [])
-    asin_map       = search_results.get("asin_map", {})
+    product_cache  = search_results.get("product_cache", {})
 
     if not products:
         print("⚠️  [Price Agent] No products from search agent")
         return {
             "agent_opinions": {**state.get("agent_opinions", {}), "price_agent": {}},
-            "confidence":     {**state.get("confidence", {}),     "price_agent": 0.0},
-            "supervisor_notes": ["[Price Agent] No products to price"],
+            "confidence":     {**state.get("confidence", {}), "price_agent": 0.0},
+            "notes":          ["[Price] No products to price"],
         }
 
     findings = {"products_analyzed": {}}
 
     for product in products[:5]:
         print(f"  💰 Pricing: {product}")
+        cached = product_cache.get(product, {})
 
-        # If we already have the ASIN, hit product-details directly for price
-        asin = asin_map.get(product)
-        if asin:
-            try:
-                headers = {
-                    "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
-                    "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com",
-                }
-                resp = requests.get(
-                    "https://real-time-amazon-data.p.rapidapi.com/product-details",
-                    headers=headers,
-                    params={"asin": asin, "country": "IN"},
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    d = resp.json().get("data", {})
-                    amazon_data = {
-                        "name":      d.get("product_title", product),
-                        "price":     d.get("product_price") or d.get("product_minimum_offer_price", ""),
-                        "rating":    d.get("product_star_rating", ""),
-                        "reviews":   d.get("product_num_ratings", 0),
-                        "url":       d.get("product_url", ""),
-                        "available": d.get("product_price") is not None,
-                    }
-                else:
-                    amazon_data = search_amazon_price(product)
-            except Exception:
-                amazon_data = search_amazon_price(product)
-        else:
-            amazon_data = search_amazon_price(product)
+        if cached:
+            price_str = cached.get("product_price", "")
+            price_inr = extract_price_value(price_str)
 
-        if amazon_data:
-            price_inr = extract_price_value(amazon_data.get("price", "0"))
-            # price_score: scored relative to sibling products — computed after all products collected
+            if price_inr == 0:
+                asin = search_results.get("asin_map", {}).get(product, "")
+                fallback = _fetch_price_by_search(product, asin)
+                fb_price = extract_price_value(fallback.get("price", ""))
+                if fb_price > 0:
+                    price_inr = fb_price
+                    price_str = fallback.get("price", "")
+                    print(f"     💡 Price from fallback search: ₹{price_inr}")
+
             findings["products_analyzed"][product] = {
-                "price_inr":           price_inr,
-                "price_usd_equivalent": price_inr / 83.5,
-                "availability":        amazon_data.get("available", False),
-                "rating":              float(amazon_data.get("rating", 0) or 0),
-                "reviews_count":       amazon_data.get("reviews", 0),
-                "url":                 amazon_data.get("url", ""),
-                "price_score":         0,  # filled below after all prices collected
+                "price_inr":            price_inr,
+                "price_usd_equivalent": price_inr / 95,
+                "availability":         price_inr > 0,
+                "reviews_count":        cached.get("num_ratings", 0),
+                "url":                  cached.get("product_url", ""),
+                "price_score":          0,
             }
-            print(f"     ✅ ₹{price_inr} | Available: {amazon_data.get('available')}")
+            print(f"     ✅ ₹{price_inr} (from cache)")
         else:
-            findings["products_analyzed"][product] = {"price_score": 0, "error": "Not found on Amazon.in"}
-            print(f"     ❌ Not found on Amazon India")
+            findings["products_analyzed"][product] = {"price_score": 0, "error": "Not in cache"}
+            print(f"     ⚠️  No cached data for {product[:50]}")
 
-    # ── Relative price scoring ───────────────────────────────────────────────
-    # Score relative to peers: cheapest = 100, most expensive = 0
-    # Works correctly regardless of absolute price range (₹50k–₹2L, etc.)
+    # Price scoring: 100 * min_price / price
+    # A product 10% more expensive scores ~91, not 0 — reflects actual value difference
     valid_prices = {
         name: data["price_inr"]
         for name, data in findings["products_analyzed"].items()
         if data.get("price_inr", 0) > 0
     }
     if valid_prices:
-        min_price  = min(valid_prices.values())
-        max_price  = max(valid_prices.values())
-        price_range = max_price - min_price if max_price != min_price else 1
+        min_p = min(valid_prices.values())
         for name in findings["products_analyzed"]:
-            price_inr = findings["products_analyzed"][name].get("price_inr", 0)
-            if price_inr > 0:
-                score = 100 * (1 - (price_inr - min_price) / price_range)
-                findings["products_analyzed"][name]["price_score"] = round(score, 1)
+            p = findings["products_analyzed"][name].get("price_inr", 0)
+            if p > 0:
+                findings["products_analyzed"][name]["price_score"] = round(10 * min_p / p, 1)
 
-    current_opinions   = state.get("agent_opinions", {})
-    current_confidence = state.get("confidence", {})
     priced_count   = sum(1 for v in findings["products_analyzed"].values() if v.get("price_inr", 0) > 0)
     total_count    = max(len(findings["products_analyzed"]), 1)
     avg_confidence = priced_count / total_count
 
     return {
-        "raw_findings":     [{"agent": "price_agent", "data": findings}],
-        "agent_opinions":   {**current_opinions,   "price_agent": findings},
-        "confidence":       {**current_confidence, "price_agent": avg_confidence},
-        "supervisor_notes": [f"[Price Agent] Priced {priced_count}/{total_count} products | confidence={avg_confidence:.2f}"],
+        "raw_findings":   [{"agent": "price_agent", "data": findings}],
+        "agent_opinions": {**state.get("agent_opinions", {}), "price_agent": findings},
+        "confidence":     {**state.get("confidence", {}), "price_agent": avg_confidence},
+        "notes":          [f"[Price] {priced_count}/{total_count} products priced | confidence={avg_confidence:.2f}"],
     }
 
 
@@ -776,9 +764,33 @@ def price_agent_node(state: Blackboard) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def ranker_agent_node(state: Blackboard) -> dict:
-    opinions     = state.get("agent_opinions", {})
-    review_data  = opinions.get("review_agent", {}).get("products_analyzed", {})
-    price_data   = opinions.get("price_agent",  {}).get("products_analyzed", {})
+    opinions    = state.get("agent_opinions", {})
+    review_data = opinions.get("review_agent", {}).get("products_analyzed", {})
+    price_data  = opinions.get("price_agent",  {}).get("products_analyzed", {})
+    query       = state["query"]
+
+    # Step A: derive weights from query intent (1 LLM call)
+    weight_resp = llm.invoke([
+        SystemMessage(content=(
+            "You assign product ranking weights based on what a query implies. "
+            "Weights must sum to exactly 1.0. "
+            "Return ONLY raw JSON: {\"quality\": 0.0-1.0, \"price\": 0.0-1.0, \"availability\": 0.0-1.0}\n"
+            "Examples:\n"
+            "- 'best gaming laptop' → quality:0.6, price:0.2, availability:0.2\n"
+            "- 'best laptop under 50000' → quality:0.3, price:0.5, availability:0.2\n"
+            "- 'best laptop for office' → quality:0.5, price:0.3, availability:0.2"
+        )),
+        HumanMessage(content=f"Query: \"{query}\""),
+    ])
+    base_w = extract_json(weight_resp.content)
+    # Validate + fallback
+    q_w = float(base_w.get("quality", 0.5) or 0.5)
+    p_w = float(base_w.get("price",   0.3) or 0.3)
+    a_w = float(base_w.get("availability", 0.2) or 0.2)
+    total = q_w + p_w + a_w
+    if abs(total - 1.0) > 0.05:  # normalise if LLM drifted
+        q_w, p_w, a_w = q_w/total, p_w/total, a_w/total
+    print(f"  ⚖️  Weights — quality:{q_w:.0%} price:{p_w:.0%} availability:{a_w:.0%}")
 
     ranked_products = []
 
@@ -786,15 +798,22 @@ def ranker_agent_node(state: Blackboard) -> dict:
         rd = review_data.get(product_name, {})
         pd = price_data.get(product_name, {})
 
-        # quality_score: 0-100 from LLM review analysis
         quality_score      = float(rd.get("rating", 0) or 0)
-        # price_score: 0-100 relative among peers (cheapest=100, costliest=0)
         price_score        = float(pd.get("price_score", 0) or 0)
-        # availability: binary 0 or 100
         availability_score = 100.0 if pd.get("availability", False) else 0.0
 
-        # Weighted combined: quality 50% + price-value 30% + availability 20%
-        combined_score = (quality_score * 0.5) + (price_score * 0.3) + (availability_score * 0.2)
+        # Step B: per-product data-quality adjustment
+        review_conf = float(rd.get("confidence", 1.0) or 1.0)
+        if review_conf < 0.5:
+            # Redistribute quality weight toward price + availability
+            eff_q = q_w * review_conf
+            redistributed = q_w - eff_q
+            eff_p = p_w + redistributed * 0.7
+            eff_a = a_w + redistributed * 0.3
+        else:
+            eff_q, eff_p, eff_a = q_w, p_w, a_w
+
+        combined_score = (quality_score * eff_q) + (price_score * eff_p) + (availability_score * eff_a)
 
         ranked_products.append({
             "name":               product_name,
@@ -802,12 +821,12 @@ def ranker_agent_node(state: Blackboard) -> dict:
             "quality_score":      quality_score,
             "price_score":        price_score,
             "availability_score": availability_score,
+            "eff_weights":        {"quality": eff_q, "price": eff_p, "availability": eff_a},
             "review_data":        rd,
             "price_data":         pd,
         })
 
     ranked_products.sort(key=lambda x: x["combined_score"], reverse=True)
-
     winner = ranked_products[0] if ranked_products else None
 
     result = {
@@ -820,178 +839,366 @@ def ranker_agent_node(state: Blackboard) -> dict:
                 "price_score":  round(p["price_score"], 1),
                 "price_inr":    p["price_data"].get("price_inr", "N/A"),
                 "availability": "✅ In Stock" if p["price_data"].get("availability") else "❌ N/A",
-                "amazon_stars": p["price_data"].get("rating", "N/A"),
                 "url":          p["price_data"].get("url", "N/A"),
             }
             for i, p in enumerate(ranked_products[:10])
         ],
         "winner": {
-            "rank":           1,
             "name":           winner["name"] if winner else "Not found",
             "combined_score": round(winner["combined_score"], 1) if winner else 0,
             "quality_score":  round(winner["quality_score"], 1) if winner else 0,
             "price_score":    round(winner["price_score"], 1) if winner else 0,
             "availability":   "In Stock" if (winner and winner["price_data"].get("availability")) else "Out of Stock",
             "price_inr":      winner["price_data"].get("price_inr", "N/A") if winner else "N/A",
-            # amazon star rating comes from price_data; review sentiment from review_data
-            "rating":         winner["price_data"].get("rating", "N/A") if winner else "N/A",
             "reviews":        winner["price_data"].get("reviews_count", 0) if winner else 0,
             "url":            winner["price_data"].get("url", "N/A") if winner else "N/A",
-            "why":            (
-                f"Best overall: quality {winner['quality_score']:.0f}/100 × 50% + "
-                f"relative price value {winner['price_score']:.0f}/100 × 30% + "
-                f"availability 100/100 × 20% = {winner['combined_score']:.1f}/100"
-            ) if winner else "No products found",
-            "reasoning":      (
-                f"Review quality {winner['quality_score']:.0f}/100 × 0.5 + "
-                f"Price-value rank {winner['price_score']:.0f}/100 × 0.3 + "
-                f"Availability {winner['availability_score']:.0f}/100 × 0.2 = "
+            "why": (
+                f"Query intent weights — quality:{q_w:.0%} × price:{p_w:.0%} × availability:{a_w:.0%}. "
+                f"Score: {winner['quality_score']:.0f}×{winner['eff_weights']['quality']:.2f} + "
+                f"{winner['price_score']:.0f}×{winner['eff_weights']['price']:.2f} + "
+                f"{winner['availability_score']:.0f}×{winner['eff_weights']['availability']:.2f} = "
                 f"{winner['combined_score']:.1f}/100"
-            ) if winner else "N/A",
-            "benefits":  winner["review_data"].get("benefits", []) if winner else [],
-            "losses":    winner["review_data"].get("losses", [])   if winner else [],
+            ) if winner else "No products found",
+            "benefits":   winner["review_data"].get("benefits", []) if winner else [],
+            "losses":     winner["review_data"].get("losses",   []) if winner else [],
             "confidence": min(0.95, winner["combined_score"] / 100) if winner else 0.1,
         },
-        "methodology":     "Combined: Review quality 50% + Relative price-value 30% + Availability 20%",
-        "synthesis_notes": f"Evaluated {len(ranked_products)} products | price_score is peer-relative (cheapest=100, costliest=0)",
+        "weights_used":    {"quality": q_w, "price": p_w, "availability": a_w},
+        "methodology":     f"Adaptive weights from query intent | peer-relative price scoring",
+        "synthesis_notes": f"Evaluated {len(ranked_products)} products",
     }
-
-    current_opinions   = state.get("agent_opinions", {})
-    current_confidence = state.get("confidence", {})
 
     return {
-        "agent_opinions":       {**current_opinions,   "ranker": result},
-        "confidence":           {**current_confidence, "ranker": result["winner"]["confidence"]},
+        "agent_opinions":   {**state.get("agent_opinions", {}), "ranker": result},
+        "confidence":       {**state.get("confidence", {}), "ranker": result["winner"]["confidence"]},
         "final_recommendation": result,
-        "supervisor_notes":     [f"[Ranker] Winner: {result['winner']['name']} "
-                                 f"| score: {result['winner']['combined_score']}/100"],
+        "notes":            [f"[Ranker] Winner: {result['winner']['name']} | score: {result['winner']['combined_score']}/100"],
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ROUTING
-# ─────────────────────────────────────────────────────────────────────────────
-
-def route_from_supervisor(state: Blackboard) -> str:
-    next_agent = state.get("next_agent", "DONE")
-    iteration  = state.get("iteration", 0)
-
-    if iteration >= 8 or next_agent == "DONE":
-        return "ranker_agent"
-
-    search_completed = "search_agent" in state.get("agent_opinions", {})
-    review_pending   = "review_agent" not in state.get("agent_opinions", {})
-    price_pending    = "price_agent"  not in state.get("agent_opinions", {})
-
-    if search_completed and review_pending and price_pending:
-        return "parallel_agents"
-
-    route_map = {
-        "search_agent":    "search_agent",
-        "review_agent":    "review_agent",
-        "price_agent":     "price_agent",
-        "parallel_agents": "parallel_agents",
-        "ranker_agent":    "ranker_agent",
-    }
-    return route_map.get(next_agent, "ranker_agent")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PARALLEL AGENTS — runs review + price together after human loop
+# PARALLEL AGENTS — review + price run in threads, both read from cache
 # ─────────────────────────────────────────────────────────────────────────────
 
 def parallel_agents_node(state: Blackboard) -> dict:
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    import threading
 
-    print(f"\n⚡ Running Review & Price agents in TRUE parallel (threads)…\n")
+    print(f"\n⚡ Running Review & Price agents in parallel…\n")
 
     results = {}
 
-    def run_review():
-        results["review"] = review_agent_node(state)
-
-    def run_price():
-        results["price"] = price_agent_node(state)
+    def run_review(): results["review"] = review_agent_node(state)
+    def run_price():  results["price"]  = price_agent_node(state)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {
-            executor.submit(run_review): "review",
-            executor.submit(run_price):  "price",
-        }
+        futures = {executor.submit(run_review): "review", executor.submit(run_price): "price"}
         for future in as_completed(futures):
-            agent = futures[future]
             try:
-                future.result()  # raises if the thread threw
+                future.result()
             except Exception as e:
-                print(f"⚠️  [{agent}] thread failed: {e}")
-                results.setdefault(agent, {})
+                print(f"⚠️  [{futures[future]}] thread failed: {e}")
+                results.setdefault(futures[future], {})
 
     review_result = results.get("review", {})
     price_result  = results.get("price",  {})
 
-    merged_opinions = {
-        **state.get("agent_opinions", {}),
-        "review_agent": review_result.get("agent_opinions", {}).get("review_agent", {}),
-        "price_agent":  price_result.get("agent_opinions",  {}).get("price_agent",  {}),
+    return {
+        "raw_findings":   (
+            state.get("raw_findings", [])
+            + review_result.get("raw_findings", [])
+            + price_result.get("raw_findings",  [])
+        ),
+        "agent_opinions": {
+            **state.get("agent_opinions", {}),
+            "review_agent": review_result.get("agent_opinions", {}).get("review_agent", {}),
+            "price_agent":  price_result.get("agent_opinions",  {}).get("price_agent",  {}),
+        },
+        "confidence": {
+            **state.get("confidence", {}),
+            **review_result.get("confidence", {}),
+            **price_result.get("confidence",  {}),
+        },
+        "notes": review_result.get("notes", []) + price_result.get("notes", []),
     }
-    merged_confidence = {
-        **state.get("confidence", {}),
-        **review_result.get("confidence", {}),
-        **price_result.get("confidence",  {}),
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTENT CLASSIFIER — detects discovery vs comparison mode
+# ─────────────────────────────────────────────────────────────────────────────
+
+def intent_classifier_node(state: Blackboard) -> dict:
+    response = llm.invoke([
+        SystemMessage(content=(
+            "Classify a product query into one of two modes:\n"
+            "- \"discovery\": user wants to find/recommend the best product "
+            "(e.g. 'best phone under 30000', 'which laptop for gaming')\n"
+            "- \"comparison\": user explicitly names 2+ specific products to compare "
+            "(e.g. 'compare iPhone 15 vs Samsung S24', 'OnePlus 12 or Pixel 9 which is better')\n"
+            "Also extract budget information:\n"
+            "- \"budget_type\": \"under\" (under/below/max/within), \"around\" (around/approximately/about), "
+            "\"range\" (between X and Y), or \"none\" if no budget mentioned\n"
+            "- \"budget_min\": lower bound in INR (0 if not a range; convert USD/EUR to INR)\n"
+            "- \"budget_max\": upper bound in INR (0 if no budget mentioned; convert USD/EUR to INR)\n"
+            "Examples: 'under 1000' → type=under, min=0, max=1000\n"
+            "          'around 20000' → type=around, min=0, max=20000\n"
+            "          'between 1000 and 2000' → type=range, min=1000, max=2000\n"
+            "- \"search_keyword\": 2-4 word clean product keyword for Amazon search "
+            "(remove budget, question words, filler, typos). e.g. 'earphone', 'gaming laptop'\n"
+            "Return ONLY raw JSON: {\"mode\": \"discovery\"|\"comparison\", \"products\": [\"name1\", \"name2\"], "
+            "\"budget_type\": \"none\", \"budget_min\": 0, \"budget_max\": 0, \"search_keyword\": \"\"}\n"
+            "products list is only populated for comparison mode, otherwise []."
+        )),
+        HumanMessage(content=f"Query: {state['query']}"),
+    ])
+    result         = extract_json(response.content)
+    mode           = result.get("mode", "discovery")
+    products       = result.get("products", [])
+    budget_type    = result.get("budget_type", "none") or "none"
+    budget_min     = int(result.get("budget_min", 0) or 0)
+    budget_max     = int(result.get("budget_max", 0) or 0)
+    search_keyword = result.get("search_keyword", "").strip() or state["query"]
+    print(f"  🧭 Mode: {mode.upper()}" + (f" | Products: {products}" if products else ""))
+    print(f"  🔑 Amazon keyword: {search_keyword}")
+    if budget_type != "none" and budget_max > 0:
+        print(f"  💰 Budget: {budget_type} ₹{budget_max:,}" + (f" (min ₹{budget_min:,})" if budget_min else ""))
+    return {"mode": mode, "comparison_products": products,
+            "budget_type": budget_type, "budget_min": budget_min, "budget_max": budget_max,
+            "search_keyword": search_keyword}
+
+
+def route_from_classifier(state: Blackboard) -> str:
+    return "comparison_search_agent" if state.get("mode") == "comparison" else "search_agent"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPARISON SEARCH AGENT — resolves known product names to ASINs, no Tavily
+# ─────────────────────────────────────────────────────────────────────────────
+
+def comparison_search_agent_node(state: Blackboard) -> dict:
+    products_to_compare = state.get("comparison_products", [])
+    if not products_to_compare:
+        return {
+            "notes": ["[Comparison Search] No products specified"],
+            "agent_opinions": {**state.get("agent_opinions", {}),
+                               "search_agent": {"products": [], "asin_map": {}, "product_cache": {}, "confidence": 0.1}},
+            "confidence": {**state.get("confidence", {}), "search_agent": 0.1},
+        }
+
+    print(f"  🔍 Resolving {len(products_to_compare)} products on Amazon…")
+    asin_map: dict = {}
+    resolved_products: list = []
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # Resolve in parallel, preserving mapping from original name → (title, asin)
+    orig_to_resolved: dict = {}  # orig_name → (title, asin)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_resolve_product_name, n): n for n in products_to_compare}
+        for future in as_completed(futures):
+            orig_name = futures[future]
+            title, asin = future.result()
+            orig_to_resolved[orig_name] = (title, asin)
+            print(f"     ✅ Resolved '{orig_name}' → '{title[:50]}' (ASIN: {asin or 'n/a'})")
+
+    def _ask_url_fallback(orig_name: str, reason: str) -> tuple:
+        """Ask user for Amazon URL when auto-resolution fails. Returns (title, asin) or (orig_name, '')."""
+        print(f"\n  ⚠️  Could not auto-resolve '{orig_name}': {reason}")
+        print(f"     Please paste the Amazon India product URL for '{orig_name}'.")
+        print(f"     (e.g. https://www.amazon.in/dp/B0XXXXXXXX — or press Enter to skip)")
+        url = input(f"  🔗 URL for '{orig_name}': ").strip()
+        if not url:
+            print(f"  ⏭️  Skipped '{orig_name}'")
+            return orig_name, ""
+        new_asin = _extract_asin_from_url(url)
+        if not new_asin:
+            print(f"  ⚠️  Could not extract ASIN from URL — skipping '{orig_name}'")
+            return orig_name, ""
+        data = get_amazon_reviews_by_asin(new_asin)
+        if data:
+            new_title = data.get("product_title", orig_name)
+            print(f"  ✅ Resolved '{orig_name}' → '{new_title}' (ASIN: {new_asin})")
+            return new_title, new_asin
+        print(f"  ⚠️  Could not fetch details for ASIN {new_asin} — skipping '{orig_name}'")
+        return orig_name, ""
+
+    # Validate resolutions: prompt URL for both failed validation (no ASIN) and duplicate ASINs
+    asin_to_first: dict = {}
+    for orig_name in products_to_compare:
+        title, asin = orig_to_resolved.get(orig_name, (orig_name, ""))
+
+        if not asin:
+            # Validation failed — Amazon returned wrong product
+            title, asin = _ask_url_fallback(orig_name, "auto-resolution returned a different product")
+            orig_to_resolved[orig_name] = (title, asin)
+
+        if asin and asin in asin_to_first:
+            first_name = asin_to_first[asin]
+            title, asin = _ask_url_fallback(
+                orig_name,
+                f"resolved to the same product as '{first_name}' (ASIN: {asin})"
+            )
+            orig_to_resolved[orig_name] = (title, asin)
+
+        if asin:
+            asin_to_first[asin] = orig_name
+
+    # Build final resolved_products and asin_map from validated pairs
+    for orig_name in products_to_compare:
+        title, asin = orig_to_resolved.get(orig_name, (orig_name, ""))
+        resolved_products.append(title)
+        if asin:
+            asin_map[title] = asin
+
+    # Fetch product details in parallel
+    print(f"  📦 Fetching details for {len(resolved_products)} products…")
+    product_cache: dict = {}
+
+    def _fetch(product):
+        asin = asin_map.get(product)
+        if not asin:
+            return product, None
+        data = get_amazon_reviews_by_asin(asin)
+        return product, data or None
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_fetch, p): p for p in resolved_products}
+        for future in as_completed(futures):
+            product, data = future.result()
+            if data:
+                product_cache[product] = data
+                print(f"     ✅ Cached: {product[:60]}")
+            else:
+                print(f"     ⚠️  No details for: {product[:60]}")
+
+    formatted_findings = {
+        "products":      resolved_products,
+        "asin_map":      asin_map,
+        "product_cache": product_cache,
+        "confidence":    0.9 if resolved_products else 0.1,
     }
-    merged_findings = (
-        state.get("raw_findings", [])
-        + review_result.get("raw_findings", [])
-        + price_result.get("raw_findings",  [])
-    )
-    notes = (
-        review_result.get("supervisor_notes", [])
-        + price_result.get("supervisor_notes",  [])
-    )
+
+    print(f"  ✅ {len(resolved_products)} products resolved | {len(product_cache)} cached")
+    return {
+        "raw_findings":   [{"agent": "comparison_search_agent", "data": formatted_findings}],
+        "agent_opinions": {**state.get("agent_opinions", {}), "search_agent": formatted_findings},
+        "confidence":     {**state.get("confidence", {}), "search_agent": formatted_findings["confidence"]},
+        "notes":          [f"[Comparison Search] {len(resolved_products)} products resolved"],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPARISON RANKER — side-by-side table + LLM verdict
+# ─────────────────────────────────────────────────────────────────────────────
+
+def comparison_ranker_node(state: Blackboard) -> dict:
+    opinions    = state.get("agent_opinions", {})
+    review_data = opinions.get("review_agent", {}).get("products_analyzed", {})
+    price_data  = opinions.get("price_agent",  {}).get("products_analyzed", {})
+    query       = state["query"]
+
+
+    comparison_table = []
+    for product in set(list(review_data.keys()) + list(price_data.keys())):
+        rd = review_data.get(product, {})
+        pd = price_data.get(product, {})
+        comparison_table.append({
+            "name":         product,
+            "quality":      float(rd.get("rating", 50) or 50),
+            "price_inr":    pd.get("price_inr", 0),
+            "price_score":  float(pd.get("price_score", 0) or 0),
+            "availability": "✅ In Stock" if pd.get("availability") else "❌ N/A",
+            "url":          pd.get("url", ""),
+            "benefits":     rd.get("benefits", []),
+            "losses":       rd.get("losses", []),
+            "sentiment":    rd.get("sentiment", "neutral"),
+            "highlights":   rd.get("review_highlights", []),
+            "confidence":   rd.get("confidence", 0.3),
+        })
+
+    comparison_table.sort(key=lambda x: x["quality"], reverse=True)
+
+    # LLM verdict: who should buy which
+    verdict_resp = llm.invoke([
+        SystemMessage(content=(
+            "You are a product comparison expert. Given product scores and review highlights, "
+            "write a concise verdict in 3-5 sentences explaining who should buy each product. "
+            "Be specific about use cases. Return ONLY raw JSON: "
+            "{\"verdict\": \"...\", \"best_value\": \"product name\", \"best_performance\": \"product name\"}"
+        )),
+        HumanMessage(content=(
+            f"Query: {query}\n\n"
+            f"Products:\n{json.dumps([{k: v for k, v in p.items() if k != 'url'} for p in comparison_table], indent=2)}"
+        )),
+    ])
+    verdict_data = extract_json(verdict_resp.content)
+    verdict      = verdict_data.get("verdict", "See comparison table above.")
+    best_value   = verdict_data.get("best_value", "")
+    best_perf    = verdict_data.get("best_performance", "")
+
+    result = {
+        "mode":            "comparison",
+        "comparison_table": comparison_table,
+        "verdict":         verdict,
+        "best_value":      best_value,
+        "best_performance": best_perf,
+    }
 
     return {
-        "raw_findings":     merged_findings,
-        "agent_opinions":   merged_opinions,
-        "confidence":       merged_confidence,
-        "supervisor_notes": notes,
+        "agent_opinions":   {**state.get("agent_opinions", {}), "comparison_ranker": result},
+        "confidence":       {**state.get("confidence", {}), "comparison_ranker": 0.9},
+        "final_recommendation": result,
+        "notes":            [f"[Comparison Ranker] {len(comparison_table)} products compared"],
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GRAPH
+# GRAPH — direct linear routing, no supervisor
 # ─────────────────────────────────────────────────────────────────────────────
+
+def route_after_parallel(state: Blackboard) -> str:
+    return "comparison_ranker" if state.get("mode") == "comparison" else "ranker_agent"
+
 
 def build_graph() -> StateGraph:
     g = StateGraph(Blackboard)
 
-    g.add_node("supervisor",      supervisor_node)
-    g.add_node("search_agent",    search_agent_node)
-    g.add_node("human_loop",      human_loop_node)
-    g.add_node("parallel_agents", parallel_agents_node)
-    g.add_node("review_agent",    review_agent_node)
-    g.add_node("price_agent",     price_agent_node)
-    g.add_node("ranker_agent",    ranker_agent_node)
+    # Shared nodes
+    g.add_node("intent_classifier",        intent_classifier_node)
+    g.add_node("parallel_agents",          parallel_agents_node)
 
-    g.add_edge(START, "supervisor")
+    # Discovery path
+    g.add_node("search_agent",             search_agent_node)
+    g.add_node("human_loop",               human_loop_node)
+    g.add_node("ranker_agent",             ranker_agent_node)
 
+    # Comparison path
+    g.add_node("comparison_search_agent",  comparison_search_agent_node)
+    g.add_node("comparison_ranker",        comparison_ranker_node)
+
+    # Entry
+    g.add_edge(START, "intent_classifier")
+
+    # Branch after classifier
     g.add_conditional_edges(
-        "supervisor", route_from_supervisor,
-        {
-            "search_agent":    "search_agent",
-            "review_agent":    "review_agent",
-            "price_agent":     "price_agent",
-            "parallel_agents": "parallel_agents",
-            "ranker_agent":    "ranker_agent",
-        },
+        "intent_classifier", route_from_classifier,
+        {"search_agent": "search_agent", "comparison_search_agent": "comparison_search_agent"},
     )
 
-    g.add_edge("search_agent",    "human_loop")
-    g.add_edge("human_loop",      "supervisor")
-    g.add_edge("parallel_agents", "supervisor")
-    g.add_edge("review_agent",    "supervisor")
-    g.add_edge("price_agent",     "supervisor")
+    # Discovery path
+    g.add_edge("search_agent",            "human_loop")
+    g.add_edge("human_loop",              "parallel_agents")
+
+    # Comparison path
+    g.add_edge("comparison_search_agent", "parallel_agents")
+
+    # After parallel — branch to correct ranker based on mode
+    g.add_conditional_edges(
+        "parallel_agents", route_after_parallel,
+        {"ranker_agent": "ranker_agent", "comparison_ranker": "comparison_ranker"},
+    )
+
     g.add_edge("ranker_agent",    END)
+    g.add_edge("comparison_ranker", END)
 
     return g.compile()
 
@@ -1006,14 +1213,12 @@ def find_best_product(query: str) -> dict:
 
     initial: Blackboard = {
         "query":                query,
+        "mode":                 "discovery",
+        "comparison_products":  [],
         "raw_findings":         [],
         "agent_opinions":       {},
-        "open_questions":       [],
-        "answered_questions":   [],
         "confidence":           {},
-        "next_agent":           "",
-        "supervisor_notes":     [],
-        "iteration":            0,
+        "notes":                [],
         "final_recommendation": {},
     }
 
@@ -1022,45 +1227,92 @@ def find_best_product(query: str) -> dict:
     final = None
     for step in app.stream(initial, stream_mode="updates"):
         for node_name, output in step.items():
-            for note in output.get("supervisor_notes", []):
+            for note in output.get("notes", []):
                 print(f"  {note}")
         final = step
 
-    final  = final or {}
-    winner = final.get("ranker_agent", {}).get("final_recommendation", {}).get("winner", {})
-    ranked = final.get("ranker_agent", {}).get("final_recommendation", {}).get("ranked", [])
+    final = final or {}
+
+    # Determine which ranker ran
+    rec = (
+        final.get("comparison_ranker", {}).get("final_recommendation")
+        or final.get("ranker_agent", {}).get("final_recommendation")
+        or {}
+    )
+    mode = rec.get("mode", "discovery")
 
     print(f"\n{'─'*60}")
-    print(f"🏆 WINNER: {winner.get('name', 'Not found')}")
-    print(f"   Combined Score:  {winner.get('combined_score', 'N/A')}/100")
-    print(f"   Quality Score:   {winner.get('quality_score',  'N/A')}/100 (50% weight)")
-    print(f"   Price Score:     {winner.get('price_score',    'N/A')}/100 (30% weight)")
-    print(f"   Availability:    {winner.get('availability',   'N/A')} (20% weight)")
-    print(f"\n   Price (INR):     ₹{winner.get('price_inr', 'N/A')}")
-    print(f"   Rating:          {winner.get('rating', 'N/A')} ⭐ ({winner.get('reviews', 0)} reviews)")
-    print(f"   Why this one?    {winner.get('why', 'N/A')}")
-    print(f"   Reasoning:       {winner.get('reasoning', 'N/A')}")
-    print(f"   Benefits:        {', '.join(winner.get('benefits', [])[:3])}")
-    print(f"   Caveats:         {', '.join(winner.get('losses',   [])[:2])}")
-    print(f"   Buy at:          {winner.get('url', 'N/A')}")
-    print(f"   Confidence:      {winner.get('confidence', 'N/A'):.0%}")
 
-    print(f"\n   📊 Top {min(10,len(ranked))} Ranked Products:")
-    print(f"   {'#':<3} {'Product':<32} {'Score':>5}  {'Quality':>7}  {'PriceVal':>8}  {'Price(₹)':>9}  {'Avail'}")
-    print(f"   {'─'*85}")
-    for r in ranked[:10]:
-        print(
-            f"   #{r.get('rank','?'):<3} {r.get('name','?')[:32]:<32} "
-            f"{str(r.get('score','?')):>5}  "
-            f"{str(r.get('quality','?')):>7}  "
-            f"{str(r.get('price_score','?')):>8}  "
-            f"{'₹'+str(int(r.get('price_inr',0))):>9}  "
-            f"{r.get('availability','?')}"
-        )
-    print(f"{'─'*60}\n")
+    if mode == "comparison":
+        # ── Comparison output ────────────────────────────────────────────────
+        table  = rec.get("comparison_table", [])
+        verdict = rec.get("verdict", "")
+        print(f"📊 COMPARISON RESULTS ({len(table)} products)\n")
+        print(f"   {'Product':<35} {'Quality':>7}  {'PriceVal':>8}  {'Price(₹)':>10}  {'Avail':<12}  Sentiment")
+        print(f"   {'─'*90}")
+        for p in table:
+            price_str = f"₹{int(p['price_inr'])}" if isinstance(p.get('price_inr'), (int, float)) and p['price_inr'] else "N/A"
+            print(
+                f"   {p['name'][:35]:<35} "
+                f"{p['quality']:>7.1f}  "
+                f"{p['price_score']:>8.1f}  "
+                f"{price_str:>10}  "
+                f"{p['availability']:<12}  "
+                f"{p['sentiment']}"
+            )
+        print(f"\n   🏅 Best Value:       {rec.get('best_value', 'N/A')}")
+        print(f"   🚀 Best Performance: {rec.get('best_performance', 'N/A')}")
+        print(f"\n   📝 Verdict:\n   {verdict}")
+        print()
+        for p in table:
+            print(f"   {p['name'][:60]}")
+            if p["benefits"]:
+                print(f"     ✅ Pros: {', '.join(p['benefits'][:3])}")
+            if p["losses"]:
+                print(f"     ❌ Cons: {', '.join(p['losses'][:2])}")
+            if p.get("url"):
+                print(f"     🛒 {p['url']}")
+            print()
+        return rec
 
-    return winner
+    else:
+        # ── Discovery output ─────────────────────────────────────────────────
+        winner  = rec.get("winner", {})
+        ranked  = rec.get("ranked", [])
+        weights = rec.get("weights_used", {})
+        print(f"🏆 WINNER: {winner.get('name', 'Not found')}")
+        print(f"   Combined Score:  {winner.get('combined_score', 'N/A')}/100")
+        print(f"   Quality Score:   {winner.get('quality_score',  'N/A')}/100 ({weights.get('quality', 0):.0%} weight)")
+        print(f"   Price Score:     {winner.get('price_score',    'N/A')}/10 ({weights.get('price', 0):.0%} weight)")
+        print(f"   Availability:    {winner.get('availability',   'N/A')} ({weights.get('availability', 0):.0%} weight)")
+        print(f"\n   Price (INR):     ₹{winner.get('price_inr', 'N/A')}")
+        print(f"   Reviews count:   {winner.get('reviews', 0)} ratings")
+        print(f"   Why this one?    {winner.get('why', 'N/A')}")
+        print(f"   Benefits:        {', '.join(winner.get('benefits', [])[:3])}")
+        print(f"   Caveats:         {', '.join(winner.get('losses',   [])[:2])}")
+        print(f"   Buy at:          {winner.get('url', 'N/A')}")
+        print(f"   Confidence:      {winner.get('confidence', 0):.0%}")
+
+        print(f"\n   📊 Top {min(10,len(ranked))} Ranked Products:")
+        print(f"   {'#':<3} {'Product':<32} {'Score':>5}  {'Quality':>7}  {'PriceVal':>8}  {'Price(₹)':>9}  {'Avail'}")
+        print(f"   {'─'*85}")
+        for r in ranked[:10]:
+            price_str = f"₹{int(r['price_inr'])}" if isinstance(r.get('price_inr'), (int, float)) and r['price_inr'] else "N/A"
+            print(
+                f"   #{r.get('rank','?'):<3} {r.get('name','?')[:32]:<32} "
+                f"{str(r.get('score','?')):>5}  "
+                f"{str(r.get('quality','?')):>7}  "
+                f"{str(r.get('price_score','?')):>8}  "
+                f"{price_str:>9}  "
+                f"{r.get('availability','?')}"
+            )
+        print(f"{'─'*60}\n")
+        return winner
 
 
 if __name__ == "__main__":
-    result = find_best_product("best laptop under 100000 lakh")
+    query = input("🔍 What are you looking for? ").strip()
+    if query:
+        result = find_best_product(query)
+    else:
+        print("No query entered.")
