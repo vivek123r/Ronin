@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion'
 import { Search, Loader2, ArrowRight, TrendingDown, Star, BarChart2, Brain, Users, Shield } from 'lucide-react'
+import SwarmFX from './SwarmFX'
 
 /* Spider-Man SVG logo inline */
 function SpiderIcon({ size = 20, color = '#fff' }) {
@@ -938,10 +939,15 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
         </div>
       </motion.section>
 
-      {/* ── SECTION 1: Features bento ──────────────────────────────────── */}
-      <section style={{ padding: '80px 24px', maxWidth: '1100px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+      {/* ── Swarm zone TOP — left to right ──────────────────────────────── */}
+      <div id="swarm-zone-top" style={{ height: '280px', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
+        <SwarmFX zoneId="swarm-zone-top" reverse={true} />
+      </div>
+
+      {/* ── SECTION 1: Features top, web-node swarm below ──────────────── */}
+      <section style={{ padding: '0 24px 0', maxWidth: '1100px', margin: '0 auto', position: 'relative', zIndex: 11 }}>
         <Section>
-          <div style={{ textAlign: 'center', marginBottom: '56px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
             <p style={{ color: '#e63946', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '12px' }}>
               WHY RONIN
             </p>
@@ -949,7 +955,9 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
               Intelligence at every layer
             </h2>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+
+          {/* Feature cards — top row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginBottom: '0' }}>
             {FEATURES.map((f, i) => {
               const Icon = f.icon
               return (
@@ -972,12 +980,9 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
                   onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.boxShadow = 'none' }}
                 >
                   <div style={{
-                    width: '40px', height: '40px',
-                    borderRadius: '10px',
-                    background: 'rgba(220,20,60,0.12)',
-                    border: '1px solid rgba(220,20,60,0.2)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    marginBottom: '16px',
+                    width: '40px', height: '40px', borderRadius: '10px',
+                    background: 'rgba(220,20,60,0.12)', border: '1px solid rgba(220,20,60,0.2)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px',
                   }}>
                     <Icon size={18} color="#ff6b75" />
                   </div>
@@ -989,6 +994,11 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
           </div>
         </Section>
       </section>
+
+      {/* ── Swarm zone — spider nodes travel through here ───────────────── */}
+      <div id="swarm-zone" style={{ height: '280px', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
+        <SwarmFX />
+      </div>
 
       {/* ── SECTION 2: Price Intelligence ─────────────────────────────── */}
       <section style={{ padding: '80px 24px', position: 'relative', zIndex: 1 }}>
