@@ -6,6 +6,9 @@ Multi-Agent Product Search
 """
 
 import os, json, operator, re
+
+# Set to True by api.py before calling find_best_product
+API_MODE = False
 from typing import TypedDict, Annotated, List, Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -513,6 +516,13 @@ def human_loop_node(state: Blackboard) -> dict:
     products       = list(search_results.get("products", []))
     asin_map       = dict(search_results.get("asin_map", {}))
     product_cache  = dict(search_results.get("product_cache", {}))
+
+    if API_MODE:
+        print(f"[API] Skipping human loop — {len(products)} products proceeding automatically")
+        return {
+            "agent_opinions": state.get("agent_opinions", {}),
+            "notes": ["[Human Loop] Skipped in API mode"],
+        }
 
     if not products:
         print("⚠️  No products to confirm")
@@ -1225,10 +1235,13 @@ def find_best_product(query: str) -> dict:
     print(f"\n🔍 Searching for: {query}\n{'─'*50}")
 
     final = None
+    last_opinions = {}
     for step in app.stream(initial, stream_mode="updates"):
         for node_name, output in step.items():
             for note in output.get("notes", []):
                 print(f"  {note}")
+            if "agent_opinions" in output:
+                last_opinions.update(output["agent_opinions"])
         final = step
 
     final = final or {}
@@ -1273,7 +1286,11 @@ def find_best_product(query: str) -> dict:
             if p.get("url"):
                 print(f"     🛒 {p['url']}")
             print()
-        return rec
+        return {
+            "final_recommendation": rec,
+            "agent_opinions": last_opinions,
+            "mode": "comparison",
+        }
 
     else:
         # ── Discovery output ─────────────────────────────────────────────────
@@ -1307,7 +1324,11 @@ def find_best_product(query: str) -> dict:
                 f"{r.get('availability','?')}"
             )
         print(f"{'─'*60}\n")
-        return winner
+        return {
+            "final_recommendation": rec,
+            "agent_opinions": last_opinions,
+            "mode": "discovery",
+        }
 
 
 if __name__ == "__main__":
