@@ -118,124 +118,45 @@ function FloatingCard({ card, style, animClass }) {
   )
 }
 
-/* ── Scroll-reactive Spider Orb ─────────────────────────────────── */
+/* shared signal: rappel spider sets this, SpiderOrb reads it */
+const orbSignal = { active: false }
+
+/* ── Spider Orb — glows when rappel spider is orbiting ──────────── */
 function SpiderOrb() {
   const ref = useRef(null)
-  const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] })
-  // 0 = section far away, 0.4 = section entering, 0.5 = center, 0.6+ = leaving
-  const [phase, setPhase] = useState('idle') // idle | sucking | core | ejecting
-  const [spiderPos, setSpiderPos] = useState({ x: 0, y: -120, opacity: 1, scale: 1 })
-  const [coreScale, setCoreScale] = useState(1)
-  const [legPhase, setLegPhase] = useState(0)
-  const legRef = useRef(null)
+  const [active, setActive] = useState(false)
 
   useEffect(() => {
-    return scrollYProgress.on('change', v => {
-      if (v < 0.3) {
-        // Spider hangs above orb on silk
-        const t = v / 0.3
-        setSpiderPos({ x: 0, y: -130 + t * 50, opacity: 1, scale: 1 })
-        setCoreScale(1)
-        setPhase('idle')
-      } else if (v < 0.5) {
-        // Sucking in — spider flies toward center
-        const t = (v - 0.3) / 0.2
-        setSpiderPos({ x: 0, y: -80 + t * 80, opacity: 1 - t * 0.4, scale: 1 - t * 0.5 })
-        setCoreScale(1 + t * 0.6)
-        setPhase('sucking')
-      } else if (v < 0.6) {
-        // Spider inside core — orb pulses big
-        setSpiderPos({ x: 0, y: 0, opacity: 0, scale: 0 })
-        setCoreScale(1.6 - (v - 0.5) * 2)
-        setPhase('core')
-      } else if (v < 0.8) {
-        // Eject — spider shoots out fast downward
-        const t = (v - 0.6) / 0.2
-        setSpiderPos({ x: t * 80, y: t * 160, opacity: t > 0.3 ? 1 : t / 0.3, scale: 0.5 + t * 0.7 })
-        setCoreScale(1)
-        setPhase('ejecting')
-      } else {
-        setSpiderPos({ x: 80, y: 160, opacity: 0, scale: 1 })
-        setCoreScale(1)
-        setPhase('idle')
-      }
-    })
-  }, [scrollYProgress])
+    const iv = setInterval(() => {
+      if (orbSignal.active !== active) setActive(orbSignal.active)
+    }, 50)
+    return () => clearInterval(iv)
+  }, [active])
 
-  // Wiggle legs while visible
-  useEffect(() => {
-    legRef.current = setInterval(() => setLegPhase(p => 1 - p), 300)
-    return () => clearInterval(legRef.current)
-  }, [])
-
-  const L = legPhase === 0
-    ? { tl:'M12 10 L4 4', tr:'M16 10 L24 4', ml:'M12 13 L3 13', mr:'M16 13 L25 13', bl:'M12 16 L4 22', br:'M16 16 L24 22' }
-    : { tl:'M12 10 L3 6', tr:'M16 10 L25 6', ml:'M12 13 L2 11', mr:'M16 13 L26 11', bl:'M12 16 L3 20', br:'M16 16 L25 20' }
-
-  // silk thread length from top to spider
-  const silkLen = Math.max(0, 130 + spiderPos.y)
+  const glow = active ? 1.6 : 1
 
   return (
-    <div ref={ref} style={{ position: 'relative', width: '320px', height: '320px', margin: '0 auto' }}>
+    <div ref={ref} id="orb-ball" style={{ position: 'relative', width: '320px', height: '320px', margin: '0 auto' }}>
 
-      {/* Silk thread from top */}
-      {spiderPos.opacity > 0.1 && (
-        <svg style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible', pointerEvents: 'none', zIndex: 5 }}
-          width="4" height={silkLen}>
-          <line x1="2" y1="0" x2="2" y2={silkLen}
-            stroke="#e63946" strokeWidth="1" strokeOpacity={spiderPos.opacity * 0.7}
-            strokeDasharray="3 3" />
-        </svg>
-      )}
-
-      {/* Hanging / flying spider */}
-      {spiderPos.opacity > 0.05 && (
-        <div style={{
-          position: 'absolute',
-          top: '50%', left: '50%',
-          transform: `translate(calc(-50% + ${spiderPos.x}px), calc(-50% + ${spiderPos.y}px)) scale(${spiderPos.scale})`,
-          opacity: spiderPos.opacity,
-          transition: phase === 'ejecting' ? 'none' : 'transform 0.06s linear, opacity 0.06s linear',
-          zIndex: 6,
-          filter: 'drop-shadow(0 0 8px rgba(220,20,60,0.9))',
-          pointerEvents: 'none',
-        }}>
-          <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
-            <path d={L.tl} stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-            <path d={L.tr} stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-            <path d={L.ml} stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-            <path d={L.mr} stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-            <path d={L.bl} stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-            <path d={L.br} stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
-            <ellipse cx="14" cy="14" rx="4.5" ry="6" fill="#1a0000" stroke="#e63946" strokeWidth="1"/>
-            <ellipse cx="14" cy="10" rx="2.5" ry="3" fill="#e63946" opacity="0.9"/>
-            <circle cx="12.5" cy="8.5" r="1" fill="#fff"/>
-            <circle cx="15.5" cy="8.5" r="1" fill="#fff"/>
-            <circle cx="12.8" cy="8.5" r="0.5" fill="#000"/>
-            <circle cx="15.8" cy="8.5" r="0.5" fill="#000"/>
-          </svg>
-        </div>
-      )}
-
-      {/* Outer glow ring — pulses when absorbing */}
+      {/* Outer glow ring */}
       <div style={{
         position: 'absolute', top: '50%', left: '50%',
-        transform: `translate(-50%, -50%) scale(${coreScale * 0.9})`,
+        transform: `translate(-50%, -50%) scale(${glow * 0.9})`,
         width: '280px', height: '280px',
         borderRadius: '50%',
-        border: `1px solid rgba(220,20,60,${0.08 + (coreScale - 1) * 0.3})`,
-        boxShadow: coreScale > 1.2 ? `0 0 ${60 * coreScale}px rgba(220,20,60,0.25)` : 'none',
-        transition: 'transform 0.1s, border-color 0.1s',
+        border: `1px solid rgba(220,20,60,${active ? 0.5 : 0.08})`,
+        boxShadow: active ? `0 0 80px rgba(220,20,60,0.35)` : 'none',
+        transition: 'transform 0.4s, border-color 0.4s, box-shadow 0.4s',
         zIndex: 1,
       }} />
       {/* Mid ring */}
       <div style={{
         position: 'absolute', top: '50%', left: '50%',
-        transform: `translate(-50%, -50%) scale(${coreScale * 0.7})`,
+        transform: `translate(-50%, -50%) scale(${glow * 0.7})`,
         width: '180px', height: '180px',
         borderRadius: '50%',
-        border: `1px solid rgba(220,20,60,${0.15 + (coreScale - 1) * 0.4})`,
-        transition: 'transform 0.1s',
+        border: `1px solid rgba(220,20,60,${active ? 0.6 : 0.15})`,
+        transition: 'transform 0.4s, border-color 0.4s',
         zIndex: 2,
       }} />
 
@@ -247,30 +168,31 @@ function SpiderOrb() {
           marginTop: '-4.5px', marginLeft: '-4.5px',
           borderRadius: '50%',
           background: ['#e63946','#ff8c94','#ff6b75'][i],
-          boxShadow: `0 0 12px ${['#e63946','#ff8c94','#ff6b75'][i]}`,
+          boxShadow: `0 0 ${active ? 20 : 12}px ${['#e63946','#ff8c94','#ff6b75'][i]}`,
           animation: `orbit${i + 1} ${4 + i}s linear infinite`,
-          transform: `scale(${coreScale > 1.3 ? 1.5 : 1})`,
-          transition: 'transform 0.2s',
+          transform: `scale(${active ? 1.6 : 1})`,
+          transition: 'transform 0.4s, box-shadow 0.4s',
           zIndex: 4,
         }} />
       ))}
 
-      {/* Core — blooms red when spider absorbed */}
+      {/* Core — blooms when spider is orbiting */}
       <div style={{
         position: 'absolute', top: '50%', left: '50%',
-        transform: `translate(-50%, -50%) scale(${coreScale})`,
+        transform: `translate(-50%, -50%) scale(${glow})`,
         width: '80px', height: '80px',
         borderRadius: '50%',
         background: 'radial-gradient(circle, #ff2040, #8b0000)',
-        boxShadow: `0 0 ${40 * coreScale}px rgba(220,20,60,${0.5 + (coreScale - 1) * 0.5}), 0 0 ${80 * coreScale}px rgba(220,20,60,${0.2 + (coreScale-1)*0.3})`,
+        boxShadow: active
+          ? `0 0 60px rgba(220,20,60,0.9), 0 0 120px rgba(220,20,60,0.45)`
+          : `0 0 40px rgba(220,20,60,0.5), 0 0 80px rgba(220,20,60,0.2)`,
         animation: 'pulse-glow 2s ease-in-out infinite',
-        transition: 'transform 0.1s, box-shadow 0.1s',
+        transition: 'transform 0.4s, box-shadow 0.4s',
         zIndex: 3,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {/* Spider symbol inside core when absorbed */}
-        {phase === 'core' && (
-          <div style={{ opacity: 0.6, filter: 'brightness(10)' }}>
+        {active && (
+          <div style={{ opacity: 0.7, filter: 'brightness(10)' }}>
             <SpiderIcon size={28} color="#fff" />
           </div>
         )}
@@ -375,51 +297,234 @@ function SentimentViz() {
 }
 
 /* ── Rappelling spider — fixed to viewport, scroll drives top position ── */
+const ORBIT_RADIUS = 155
+const NAV_H = 72
+
 function RappelSpider() {
-  const [spiderTop, setSpiderTop] = useState(60)
-  const [legPhase, setLegPhase] = useState(0)
-  const prevScroll = useRef(0)
+  const s = useRef({
+    phase: 'rappel',  // rappel | approach | orbit | eject
+    x: window.innerWidth * 0.93,
+    y: NAV_H,
+    scrollTop: NAV_H,
+    // approach
+    approachFrames: 0,
+    startX: 0, startY: 0,
+    // orbit
+    angle: 0,
+    orbCX: 0,
+    orbCY: 0,
+    // eject
+    vx: 0, vy: 0, scale: 1,
+    ejectFrames: 0,
+    // legs
+    legPhase: 0, lastLeg: 0,
+    raf: null,
+  })
+  const [, setTick] = useState(0)
+  const forceRender = () => setTick(n => n + 1)
+
+  function getOrbCenter() {
+    const el = document.getElementById('orb-ball')
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  }
+
+  function orbIsInRange() {
+    const orb = getOrbCenter()
+    if (!orb) return false
+    // orb is "in range" when its center is within the middle 60% of the viewport
+    return orb.y > window.innerHeight * 0.2 && orb.y < window.innerHeight * 0.8
+  }
 
   useEffect(() => {
+    const c = s.current
+
+    // ── rAF loop ───────────────────────────────────────────────────────
+    function frame(time) {
+      c.raf = requestAnimationFrame(frame)
+
+      // leg wiggle
+      if (time - c.lastLeg > 200) {
+        c.lastLeg = time
+        c.legPhase = 1 - c.legPhase
+      }
+
+      if (c.phase === 'rappel') {
+        const INFLUENCE = 350  // px proximity radius for swarm effect
+
+        // ── normal idle sway: gentle symmetric wave, always present ──────
+        const idleWave = Math.sin(time * 0.0018) * 6  // ±6px, ~3.5s cycle
+
+        // ── swarm proximity: how much each zone is influencing ────────────
+        // top zone (reverse=true) travels LEFT→RIGHT → pushes spider RIGHT (+1)
+        // bot zone (reverse=false) travels RIGHT→LEFT → pushes spider LEFT (−1)
+        let swarmPush = 0
+
+        const zoneTop = document.getElementById('swarm-zone-top')
+        const zoneBot = document.getElementById('swarm-zone')
+
+        if (zoneTop) {
+          const r = zoneTop.getBoundingClientRect()
+          const dist = Math.abs(c.y - (r.top + r.height / 2))
+          if (dist < INFLUENCE) swarmPush += (1 - dist / INFLUENCE)  // +1 = right
+        }
+        if (zoneBot) {
+          const r = zoneBot.getBoundingClientRect()
+          const dist = Math.abs(c.y - (r.top + r.height / 2))
+          if (dist < INFLUENCE) swarmPush -= (1 - dist / INFLUENCE)  // -1 = left
+        }
+
+        // swarmPush is -1→+1; apply big directional gust when near a zone
+        const gust = Math.sin(time * 0.003) * 0.4 + 0.8   // 0.4–1.2 turbulence
+        const swarmSway = swarmPush * gust * 55            // up to ±55px when fully in range
+
+        c.x = window.innerWidth * 0.93 + idleWave + swarmSway
+
+      }
+
+      if (c.phase === 'approach' || c.phase === 'orbit') orbSignal.active = true
+      else orbSignal.active = false
+
+      if (c.phase === 'approach') {
+        // smoothly lerp from start position → orbit entry point (3 o'clock)
+        c.approachFrames++
+        const orb = getOrbCenter()
+        if (orb) { c.orbCX = orb.x; c.orbCY = orb.y }
+        const targetX = c.orbCX + ORBIT_RADIUS
+        const targetY = c.orbCY
+        const t = Math.min(c.approachFrames / 55, 1)  // 55 frames ~0.9s
+        // ease-in-out cubic
+        const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2
+        c.x = c.startX + (targetX - c.startX) * ease
+        c.y = c.startY + (targetY - c.startY) * ease
+        if (t >= 1) {
+          c.angle = 0
+          c.phase = 'orbit'
+        }
+
+      } else if (c.phase === 'orbit') {
+        c.angle += 0.038
+        const orb = getOrbCenter()
+        if (orb) { c.orbCX = orb.x; c.orbCY = orb.y }
+        c.x = c.orbCX + Math.cos(c.angle) * ORBIT_RADIUS
+        c.y = c.orbCY + Math.sin(c.angle) * ORBIT_RADIUS
+
+        // eject only when orb fully leaves viewport
+        if (!orbIsInRange()) {
+          const speed = 18
+          c.vx = -Math.sin(c.angle) * speed
+          c.vy =  Math.cos(c.angle) * speed
+          c.scale = 1
+          c.ejectFrames = 0
+          c.phase = 'eject'
+        }
+
+      } else if (c.phase === 'eject') {
+        c.vy += 0.5
+        c.x += c.vx
+        c.y += c.vy
+        c.scale = Math.min(c.scale + 0.018, 1.6)
+        c.ejectFrames++
+
+        // off-screen or enough time → snap back to rappel lane
+        if (c.x > window.innerWidth + 60 || c.x < -60 ||
+            c.y > window.innerHeight + 60 || c.ejectFrames > 90) {
+          c.phase = 'rappel'
+          c.y = c.scrollTop
+          c.scale = 1
+        }
+      }
+
+      forceRender()
+    }
+
+    // ── Scroll handler ─────────────────────────────────────────────────
     const onScroll = () => {
       const scrolled = window.scrollY
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight
-      // rate: spider travels from nav bottom to viewport bottom over the full page scroll
-      const travelDist = window.innerHeight - 72 - 60  // nav bottom → near viewport bottom
+      const travelDist = window.innerHeight - NAV_H - 60
       const rate = maxScroll > 0 ? travelDist / maxScroll : 0.2
-      setSpiderTop(72 + scrolled * rate)
-      if (Math.abs(scrolled - prevScroll.current) > 1) {
-        prevScroll.current = scrolled
-        setLegPhase(p => 1 - p)
+      const newTop = NAV_H + scrolled * rate
+      c.scrollTop = newTop
+
+      if (c.phase === 'rappel') {
+        // x is driven by wind in rAF — only update y here
+        c.y = newTop
+        if (Math.abs(scrolled - c.lastLeg) > 10) {
+          c.lastLeg = scrolled; c.legPhase = 1 - c.legPhase
+        }
+
+        // Pull toward orbit when orb enters viewport
+        if (orbIsInRange()) {
+          const orb = getOrbCenter()
+          if (orb) {
+            c.orbCX = orb.x; c.orbCY = orb.y
+            c.startX = c.x
+            c.startY = c.y
+            c.approachFrames = 0
+            c.phase = 'approach'
+          }
+        }
+        forceRender()
       }
     }
+
     window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    onScroll()
+
+    // start rAF immediately so wind sway runs even in rappel phase
+    c.raf = requestAnimationFrame(frame)
+
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (c.raf) cancelAnimationFrame(c.raf)
+    }
   }, [])
 
-  const L = legPhase === 0
+  // ── Render ─────────────────────────────────────────────────────────
+  const c = s.current
+  const L = c.legPhase === 0
     ? { tl:'M12 10 L4 4', tr:'M16 10 L24 4', ml:'M12 13 L3 13', mr:'M16 13 L25 13', bl:'M12 16 L4 22', br:'M16 16 L24 22' }
     : { tl:'M12 10 L3 6', tr:'M16 10 L25 6', ml:'M12 13 L2 11', mr:'M16 13 L26 11', bl:'M12 16 L3 20', br:'M16 16 L25 20' }
 
-  // silk length = distance from top of viewport to spider
-  const silkLen = spiderTop
+  const threadLen = Math.max(0, c.y - NAV_H)
 
-  // thread starts at bottom of nav bar
-  const NAV_H = 72
-  const threadLen = Math.max(0, silkLen - NAV_H)
+  // orbit trail arc — last 70°
+  function arcPath() {
+    const trail = Math.PI * 0.39
+    const a0 = c.angle - trail
+    const x1 = c.orbCX + Math.cos(a0) * ORBIT_RADIUS
+    const y1 = c.orbCY + Math.sin(a0) * ORBIT_RADIUS
+    return `M ${x1} ${y1} A ${ORBIT_RADIUS} ${ORBIT_RADIUS} 0 0 1 ${c.x} ${c.y}`
+  }
 
   return (
-    <div style={{ position: 'fixed', top: NAV_H, right: '7%', zIndex: 9990, pointerEvents: 'none', width: '36px' }}>
-      {/* silk thread from bottom of nav down to spider */}
-      <svg width="4" height={Math.max(1, threadLen)} style={{ display: 'block', marginLeft: '16px' }}>
-        <line x1="2" y1="0" x2="2" y2={threadLen}
-          stroke="#e63946" strokeWidth="1.3" strokeOpacity="0.6" strokeDasharray="5 3"/>
-      </svg>
-      {/* spider at bottom of silk */}
+    <>
+      {/* Silk thread (rappel only) — top fixed, bottom follows swayed spider */}
+      {c.phase === 'rappel' && (
+        <svg style={{ position:'fixed', top:0, left:0, width:'100%', height:'100%', zIndex:9989, pointerEvents:'none' }}>
+          <line
+            x1={window.innerWidth * 0.93} y1={NAV_H}
+            x2={c.x} y2={c.y}
+            stroke="#e63946" strokeWidth="1.3" strokeOpacity="0.6" strokeDasharray="5 3"
+          />
+        </svg>
+      )}
+
+      {/* Orbit trail */}
+      {c.phase === 'orbit' && c.angle > 0.3 && (
+        <svg style={{ position:'fixed', top:0, left:0, width:'100%', height:'100%', zIndex:9989, pointerEvents:'none' }}>
+          <path d={arcPath()} fill="none" stroke="#e63946" strokeWidth="1.3" strokeOpacity="0.5" strokeLinecap="round"/>
+        </svg>
+      )}
+
+      {/* Spider */}
       <div style={{
-        filter: 'drop-shadow(0 0 8px rgba(220,20,60,0.9))',
-        marginLeft: '2px',
-        marginTop: '-2px',
+        position:'fixed', left: c.x - 16, top: c.y - 16,
+        zIndex:9990, pointerEvents:'none',
+        transform:`scale(${c.scale})`, transformOrigin:'center',
+        filter:'drop-shadow(0 0 8px rgba(220,20,60,0.9))',
       }}>
         <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
           <path d={L.tl} stroke="#cc1122" strokeWidth="1.5" strokeLinecap="round"/>
@@ -436,15 +541,20 @@ function RappelSpider() {
           <circle cx="15.8" cy="8.5" r="0.45" fill="#000"/>
         </svg>
       </div>
-      {/* mini web below spider */}
-      <svg width="40" height="22" viewBox="0 0 40 22" fill="none" style={{ opacity: 0.4, marginLeft: '-2px' }}>
-        <line x1="20" y1="0" x2="2"  y2="22" stroke="#e63946" strokeWidth="0.7"/>
-        <line x1="20" y1="0" x2="20" y2="22" stroke="#e63946" strokeWidth="0.7"/>
-        <line x1="20" y1="0" x2="38" y2="22" stroke="#e63946" strokeWidth="0.7"/>
-        <path d="M6,9 Q20,5 34,9"   fill="none" stroke="#e63946" strokeWidth="0.6"/>
-        <path d="M3,16 Q20,11 37,16" fill="none" stroke="#e63946" strokeWidth="0.6"/>
-      </svg>
-    </div>
+
+      {/* Mini web (rappel only) */}
+      {c.phase === 'rappel' && (
+        <div style={{ position:'fixed', left:c.x - 18, top:c.y + 14, zIndex:9989, pointerEvents:'none' }}>
+          <svg width="40" height="22" viewBox="0 0 40 22" fill="none" style={{ opacity:0.38 }}>
+            <line x1="20" y1="0" x2="2"  y2="22" stroke="#e63946" strokeWidth="0.7"/>
+            <line x1="20" y1="0" x2="20" y2="22" stroke="#e63946" strokeWidth="0.7"/>
+            <line x1="20" y1="0" x2="38" y2="22" stroke="#e63946" strokeWidth="0.7"/>
+            <path d="M6,9 Q20,5 34,9"    fill="none" stroke="#e63946" strokeWidth="0.6"/>
+            <path d="M3,16 Q20,11 37,16" fill="none" stroke="#e63946" strokeWidth="0.6"/>
+          </svg>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -1079,7 +1189,7 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
       </section>
 
       {/* ── SECTION 4: AI Orb ─────────────────────────────────────────── */}
-      <section style={{ padding: '80px 24px', position: 'relative', zIndex: 1 }}>
+      <section id="orb-section" style={{ padding: '80px 24px', position: 'relative', zIndex: 1 }}>
         <Section>
           <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
             <SpiderOrb />

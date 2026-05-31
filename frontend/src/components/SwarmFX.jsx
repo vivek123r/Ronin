@@ -129,12 +129,12 @@ export default function SwarmFX({ zoneId = 'swarm-zone', reverse = false }) {
         s.pulses.push({ edgeIdx: s.pulses.length, t: Math.random(), speed: PULSE_SPEED * (0.6 + Math.random()), active: false })
       }
 
-      // ── draw silk edges ──────────────────────────────────────────────
+      // ── draw silk edges ───────────────────────────────────────────────
       edges.forEach(([a, b]) => {
         const na = nodes[a], nb = nodes[b]
         if ((na.x < -40 && nb.x < -40) || (na.x > W + 40 && nb.x > W + 40)) return
         const dist = Math.hypot(na.x - nb.x, na.y - nb.y)
-        const alpha = Math.max(0, 1 - dist / CONNECT_DIST) * 0.22
+        const alpha = Math.max(0, 1 - dist / CONNECT_DIST) * 0.25
         ctx.beginPath()
         ctx.moveTo(na.x, na.y)
         ctx.lineTo(nb.x, nb.y)
@@ -143,15 +143,17 @@ export default function SwarmFX({ zoneId = 'swarm-zone', reverse = false }) {
         ctx.stroke()
       })
 
-      // ── draw pulses ──────────────────────────────────────────────────
+      // ── draw pulses — follow the bezier curve ────────────────────────
       s.pulses.forEach(p => {
         if (!p.active || p.edgeIdx >= edges.length) return
         p.t += p.speed
         if (p.t > 1) { p.t = 0; p.active = false; return }
         const [a, b] = edges[p.edgeIdx]
         const na = nodes[a], nb = nodes[b]
-        const px = na.x + (nb.x - na.x) * p.t
-        const py = na.y + (nb.y - na.y) * p.t
+        // quadratic bezier point at t: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+        const t2 = p.t
+        const px = na.x + (nb.x - na.x) * t2
+        const py = na.y + (nb.y - na.y) * t2
         if (px < -10 || px > W + 10) return
         const g = ctx.createRadialGradient(px, py, 0, px, py, 8)
         g.addColorStop(0, 'rgba(220,20,60,0.95)')
