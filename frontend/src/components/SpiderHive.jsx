@@ -335,7 +335,7 @@ function MilestoneFeed({ milestones }) {
               >
                 <SpiderIcon color={AGENT_COLORS[m.agentId] || '#e63946'} size={14} />
                 <div>
-                  <div style={{ fontSize: 11, color: isLatest ? '#e2e8f0' : '#4a5568', lineHeight: 1.5, fontFamily: 'monospace' }}>
+                  <div style={{ fontSize: 11, color: isLatest ? '#ffffff' : '#94a3b8', lineHeight: 1.5, fontFamily: 'monospace' }}>
                     {m.text}
                   </div>
                   {isLatest && (
@@ -419,17 +419,41 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
         nodes.push({ x: W/2 + Math.cos(def.angle) * AGENT_RING_R, y: H/2 + Math.sin(def.angle) * AGENT_RING_R, type: 'agent', def })
       })
 
-      // 5–12: source nodes
-      SOURCE_LABELS.forEach((label, i) => {
-        const angle = (i / SOURCE_LABELS.length) * Math.PI * 2 - Math.PI / 2
-        const r = SOURCE_RING_R + (i % 3) * 18
-        nodes.push({ x: W/2 + Math.cos(angle) * Math.min(r, Math.min(W, H) * 0.44), y: H/2 + Math.sin(angle) * Math.min(r, Math.min(W, H) * 0.44), type: 'source', label })
+      // 5–12: source nodes — each pair fans out from its agent's anchor
+      // SUB_AGENTS order: hunter(0,-π/2), reviewer(1,0), pricer(2,π/2), ranker(3,π)
+      // sourceIdxs: hunter=[0,4], reviewer=[1,2], pricer=[3,5], ranker=[6,7]
+      const SOURCE_NODE_DEFS = [
+        // hunter sources: AMAZON(0) and FLIPKART(4) — spread horizontally at top
+        { label: 'AMAZON',   agentIdx: 0, spread: -0.55 },  // idx 5  (sourceIdx 0)
+        // reviewer sources: REDDIT(1), YOUTUBE(2)
+        { label: 'REDDIT',   agentIdx: 1, spread: -0.45 },  // idx 6  (sourceIdx 1)
+        { label: 'YOUTUBE',  agentIdx: 1, spread:  0.45 },  // idx 7  (sourceIdx 2)
+        // pricer sources: GOOGLE(3), BLOGS(5)
+        { label: 'GOOGLE',   agentIdx: 2, spread: -0.45 },  // idx 8  (sourceIdx 3)
+        { label: 'FLIPKART', agentIdx: 0, spread:  0.55 },  // idx 9  (sourceIdx 4)
+        { label: 'BLOGS',    agentIdx: 2, spread:  0.45 },  // idx 10 (sourceIdx 5)
+        // ranker sources: FORUMS(6), TECHRADAR(7)
+        { label: 'FORUMS',   agentIdx: 3, spread: -0.45 },  // idx 11 (sourceIdx 6)
+        { label: 'TECHRADAR',agentIdx: 3, spread:  0.45 },  // idx 12 (sourceIdx 7)
+      ]
+      SOURCE_NODE_DEFS.forEach(({ label, agentIdx, spread }) => {
+        const agentAngle = SUB_AGENTS[agentIdx].angle
+        const perpAngle  = agentAngle + Math.PI / 2
+        const r          = Math.min(SOURCE_RING_R, Math.min(W, H) * 0.38)
+        const cx         = W/2 + Math.cos(agentAngle) * r
+        const cy         = H/2 + Math.sin(agentAngle) * r
+        const fanSpread  = r * 0.55
+        nodes.push({
+          x: cx + Math.cos(perpAngle) * fanSpread * spread * 2,
+          y: cy + Math.sin(perpAngle) * fanSpread * spread * 2,
+          type: 'source', label,
+        })
       })
 
-      // 13–19: filler nodes
+      // 13–19: filler nodes (kept away from top where hunter patrols)
       const fillerPositions = [
-        [0.35, 0.22], [0.68, 0.18], [0.78, 0.55], [0.65, 0.82],
-        [0.32, 0.78], [0.18, 0.58], [0.22, 0.35],
+        [0.80, 0.55], [0.65, 0.82], [0.32, 0.78],
+        [0.18, 0.58], [0.20, 0.40], [0.78, 0.38], [0.50, 0.88],
       ]
       fillerPositions.forEach(([fx, fy]) => {
         nodes.push({ x: fx * W, y: fy * H, type: 'filler' })
@@ -581,11 +605,11 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
         if (!na || !nb) return
 
         let alpha = 0
-        if (e.type === 'main') alpha = 0.35
+        if (e.type === 'main') alpha = 0.7
         else if (e.type === 'agent') {
           const sp = s.spiders[e.agentIdx]
-          alpha = sp?.reactStatus !== 'idle' ? 0.22 : 0.06
-        } else alpha = 0.07
+          alpha = sp?.reactStatus !== 'idle' ? 0.5 : 0.18
+        } else alpha = 0.18
 
         // phase fade
         if (ph >= 4) {
@@ -594,7 +618,7 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
         }
 
         ctx.beginPath(); ctx.moveTo(na.x, na.y); ctx.lineTo(nb.x, nb.y)
-        ctx.strokeStyle = `rgba(220,20,60,${alpha})`; ctx.lineWidth = e.type === 'main' ? 1 : 0.65
+        ctx.strokeStyle = `rgba(220,20,60,${alpha})`; ctx.lineWidth = e.type === 'main' ? 1.5 : 1
         ctx.stroke()
       })
 
@@ -603,12 +627,12 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
       s.nodes.forEach(n => {
         if (n.type !== 'source') return
         const nearAny = s.spiders.some(sp => Math.hypot(sp.x - n.x, sp.y - n.y) < 90)
-        const alpha = nearAny ? 0.85 : 0.28
-        ctx.fillStyle = `rgba(220,20,60,${alpha})`
+        const alpha = nearAny ? 1.0 : 0.6
+        ctx.fillStyle = `rgba(255,100,110,${alpha})`
         ctx.fillText(n.label, n.x, n.y - 10)
         // dot
-        ctx.beginPath(); ctx.arc(n.x, n.y, 3, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(220,20,60,${nearAny ? 0.8 : 0.25})`; ctx.fill()
+        ctx.beginPath(); ctx.arc(n.x, n.y, 3.5, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(255,80,100,${nearAny ? 1.0 : 0.6})`; ctx.fill()
       })
 
       // ── Draw cocoons ──────────────────────────────────────────────────
@@ -643,7 +667,7 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
           sp.x = an.x + Math.cos(sp.orbitAngle) * 9
           sp.y = an.y + Math.sin(sp.orbitAngle) * 9
         } else if (sp.reactStatus === 'done' && (sp.def.id !== 'ranker' || s.spiders.every(o => (o.def.id !== 'pricer' && o.def.id !== 'reviewer') || o.reactStatus === 'done'))) {
-          // Move toward queen (ranker waits for both pricer and reviewer to finish first)
+          // Move toward queen — hunter stays at anchor, ranker waits for pricer+reviewer
           const qn = s.nodes[0]
           const offset = { x: Math.cos(SUB_AGENTS[i].angle + Math.PI) * 28, y: Math.sin(SUB_AGENTS[i].angle + Math.PI) * 28 }
           const tx = qn.x + offset.x, ty = qn.y + offset.y
@@ -672,7 +696,7 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
                     if (resultReadyRef.current) { clearInterval(poll); onCompleteRef.current?.() }
                   }, 200)
                 }
-              }, 1800)
+              }, 800)
             }
           }
         } else {
@@ -757,7 +781,7 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
 
         // Label
         ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
-        ctx.fillStyle = isDone ? 'rgba(74,222,128,0.8)' : 'rgba(220,20,60,0.7)'
+        ctx.fillStyle = isDone ? 'rgba(74,222,128,1.0)' : 'rgba(255,100,110,1.0)'
         ctx.fillText(sp.def.label, sp.x, sp.y + 26)
       })
 
@@ -893,13 +917,13 @@ export default function SpiderHive({ progress, query, resultReady, onComplete })
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.4 }}
-            style={{ fontSize: 10, color: 'rgba(220,20,60,0.65)', letterSpacing: '0.2em', fontFamily: 'monospace', fontWeight: 700 }}
+            style={{ fontSize: 10, color: 'rgba(255,120,130,0.95)', letterSpacing: '0.2em', fontFamily: 'monospace', fontWeight: 700 }}
           >
             {PHASE_LABELS[phase]}
           </motion.div>
         </AnimatePresence>
         {query && (
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', marginTop: 5, fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 5, fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             "{query}"
           </div>
         )}
@@ -910,7 +934,7 @@ export default function SpiderHive({ progress, query, resultReady, onComplete })
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.5 }}
-        style={{ position: 'absolute', top: 22, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}
+        style={{ position: 'absolute', top: 22, left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}
       >
         <div style={{ fontFamily: 'monospace', fontSize: 9, letterSpacing: '0.3em', color: 'rgba(220,20,60,0.4)', marginBottom: 3 }}>
           [ SPIDER INTELLIGENCE NETWORK ]

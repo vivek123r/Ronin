@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { HistorySpider } from "./SpiderFX";
 
 function timeAgo(epochMs) {
   if (!epochMs) return "";
@@ -52,7 +51,7 @@ export default function HistorySidebar({ isOpen, onToggle, onSelect, history: hi
         }
         .history-sidebar.open { transform: translateX(0); box-shadow: -4px 0 32px rgba(220,20,60,0.1); }
         .history-toggle-btn {
-          position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 101;
+          position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 99;
           background: rgba(220,20,60,0.9); color: #fff; border: none;
           border-radius: 8px 0 0 8px; padding: 12px 8px; cursor: pointer;
           writing-mode: vertical-rl; font-weight: 700; font-size: 0.65rem;
@@ -82,6 +81,18 @@ export default function HistorySidebar({ isOpen, onToggle, onSelect, history: hi
       >
         <span style={{ fontSize: "1rem" }}>🕰</span>
         <span style={{ writingMode: "vertical-rl" }}>HISTORY</span>
+        <svg width="18" height="18" viewBox="0 0 28 28" fill="none" style={{ marginTop: 4 }}>
+          <line x1="14" y1="10" x2="4"  y2="3"  stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="14" y1="10" x2="24" y2="3"  stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="14" y1="14" x2="2"  y2="12" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="14" y1="14" x2="26" y2="12" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="14" y1="17" x2="4"  y2="24" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="14" y1="17" x2="24" y2="24" stroke="#fff" strokeWidth="1.4" strokeLinecap="round"/>
+          <ellipse cx="14" cy="14" rx="4.5" ry="6" fill="#8b0000" stroke="#fff" strokeWidth="1"/>
+          <ellipse cx="14" cy="10" rx="2.5" ry="3" fill="#fff" opacity="0.9"/>
+          <circle cx="12.5" cy="8.5" r="1" fill="#e63946"/>
+          <circle cx="15.5" cy="8.5" r="1" fill="#e63946"/>
+        </svg>
       </button>
 
       <div className={`history-sidebar${isOpen ? " open" : ""}`}>
@@ -94,13 +105,6 @@ export default function HistorySidebar({ isOpen, onToggle, onSelect, history: hi
             <button onClick={onToggle} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: "1rem", padding: "2px 4px", lineHeight: 1 }}>✕</button>
           </div>
         </div>
-
-        {/* Spider drops from the top of the sidebar below the header */}
-        {isOpen && (
-          <div style={{ position: "relative", height: "0", overflow: "visible" }}>
-            <HistorySpider />
-          </div>
-        )}
 
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
           {localHistory.length === 0 ? (

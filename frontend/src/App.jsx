@@ -113,12 +113,14 @@ function App() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#080808', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }}>
       <SpiderFX />
-      <HistorySidebar
-        isOpen={historyOpen}
-        onToggle={() => setHistoryOpen(o => !o)}
-        onSelect={handleSearch}
-        history={history}
-      />
+      {!showHive && (
+        <HistorySidebar
+          isOpen={historyOpen}
+          onToggle={() => setHistoryOpen(o => !o)}
+          onSelect={handleSearch}
+          history={history}
+        />
+      )}
 
       <div style={{ transition: 'margin-left 0.3s ease', marginLeft: historyOpen ? '320px' : '0' }}>
         <AnimatePresence mode="wait">
