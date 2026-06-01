@@ -12,7 +12,8 @@ function SpiderIcon({ size = 16, color = '#fff' }) {
 import WinnerCard from './WinnerCard';
 import ComparisonView from './ComparisonView';
 import RankedTable from './RankedTable';
-import ProgressFeed from './ProgressFeed';
+import RadarChart from './RadarChart';
+import AgentReports from './AgentReports';
 
 export default function ResultsPanel({ result, isLoading, progress, query, onNewSearch, onSearch }) {
   const [searchVal, setSearchVal] = useState(query || '')
@@ -134,7 +135,6 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
           </motion.div>
         )}
 
-        <ProgressFeed messages={progress} isLoading={isLoading} />
 
         {/* Empty / not found state */}
         {isEmpty && !isLoading ? (
@@ -170,44 +170,37 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
           </motion.div>
         ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-            <WinnerCard winner={rec?.winner} weights={rec?.weights_used} />
+            {(() => {
+              const productCache = result.agent_opinions?.search_agent?.product_cache || {}
+              const reviewAnalysis = result.agent_opinions?.review_agent?.products_analyzed || {}
+              return (
+                <>
+                  {/* Section 1: Winner */}
+                  <div style={{ padding: '0 0 20px', maxWidth: '1100px', margin: '0 auto' }}>
+                    <WinnerCard winner={rec.winner} weights={rec.weights_used} productCache={productCache} />
+                  </div>
 
-            {/* Compare Top 3 button */}
-            {ranked.length >= 2 && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                style={{ marginBottom: '8px' }}
-              >
-                <button
-                  onClick={handleCompareTop3}
-                  disabled={isLoading}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '8px',
-                    background: 'rgba(220,20,60,0.08)',
-                    border: '1px solid rgba(220,20,60,0.3)',
-                    color: '#ff6b75',
-                    borderRadius: '10px',
-                    padding: '9px 18px',
-                    fontSize: '0.85rem', fontWeight: 600,
-                    cursor: isLoading ? 'not-allowed' : 'pointer',
-                    opacity: isLoading ? 0.5 : 1,
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,20,60,0.16)'; e.currentTarget.style.borderColor = 'rgba(220,20,60,0.5)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,20,60,0.08)'; e.currentTarget.style.borderColor = 'rgba(220,20,60,0.3)' }}
-                >
-                  <GitCompare size={15} />
-                  Compare Top {Math.min(3, ranked.length)} Side by Side
-                </button>
-              </motion.div>
-            )}
+                  {/* Section 2: Verdict + Radar */}
+                  <div style={{ padding: '0 0 20px', maxWidth: '1100px', margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <AgentReports mode="verdict" winner={rec.winner} weights={rec.weights_used} productCache={productCache} reviewAnalysis={reviewAnalysis} ranked={rec.ranked} />
+                    <RadarChart winner={rec.winner} weights={rec.weights_used} productCache={productCache} />
+                  </div>
 
-            <RankedTable
-              ranked={ranked}
-              productCache={result.agent_opinions?.search_agent?.product_cache || {}}
-            />
+                  {/* Section 3: Battlefield */}
+                  {rec.ranked?.length > 1 && (
+                    <div style={{ padding: '0 0 20px', maxWidth: '1100px', margin: '0 auto' }}>
+                      <RankedTable ranked={rec.ranked} productCache={productCache} />
+                    </div>
+                  )}
+
+                  {/* Section 4: Agent reports + Timeline */}
+                  <div style={{ padding: '0 0 40px', maxWidth: '1100px', margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <AgentReports mode="cards" winner={rec.winner} weights={rec.weights_used} productCache={productCache} reviewAnalysis={reviewAnalysis} ranked={rec.ranked} />
+                    <AgentReports mode="timeline" winner={rec.winner} weights={rec.weights_used} productCache={productCache} reviewAnalysis={reviewAnalysis} ranked={rec.ranked} />
+                  </div>
+                </>
+              )
+            })()}
           </motion.div>
         )}
       </div>

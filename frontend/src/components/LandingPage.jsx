@@ -937,8 +937,8 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
               <span style={{ display:'block', fontSize:'clamp(0.7rem,1.5vw,1rem)', letterSpacing:'0.35em', color:'rgba(220,20,60,0.6)', fontWeight:700, marginBottom:'12px', fontFamily:'monospace' }}>
                 [ WEB INTEL SYSTEM v2.4 ]
               </span>
-              <span style={{ display:'block', fontSize:'clamp(2.8rem,7vw,5.8rem)', color:'#fff', lineHeight:1.0 }}>THE WEB</span>
-              <span style={{ display:'block', fontSize:'clamp(2.8rem,7vw,5.8rem)', lineHeight:1.0 }} className="gradient-text">KNOWS EVERYTHING</span>
+              <span style={{ display:'block', fontSize:'clamp(2.8rem,7vw,5.8rem)', color:'#fff', lineHeight:1.0 }}>WITH KNOWLEDGE</span>
+              <span style={{ display:'block', fontSize:'clamp(2.8rem,7vw,5.8rem)', lineHeight:1.0 }} className="gradient-text">COMES RESPONSIBILITY</span>
             </motion.h1>
 
             {/* Sub */}
@@ -1030,7 +1030,7 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
             {/* Scroll indicator */}
             {!isLoading && (
               <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:1.6 }}
-                style={{ position:'absolute', bottom:'20px', left:'50%', transform:'translateX(-50%)', display:'flex', flexDirection:'column', alignItems:'center', pointerEvents:'none' }}>
+                style={{ position:'absolute', bottom:'80px', left:'50%', transform:'translateX(-50%)', display:'flex', flexDirection:'column', alignItems:'center', pointerEvents:'none' }}>
                 <span style={{ fontFamily:'monospace', color:'rgba(220,20,60,0.4)', fontSize:'0.55rem', letterSpacing:'0.2em', marginBottom:'8px' }}>SCROLL TO EXPLORE</span>
                 <motion.div animate={{ y:[0,10,0] }} transition={{ duration:2, repeat:Infinity }}
                   style={{ width:'1.5px', height:'32px', background:'linear-gradient(to bottom, rgba(220,20,60,0.6), transparent)', transformOrigin:'top' }}/>
@@ -1045,6 +1045,7 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
                 </motion.div>
               </motion.div>
             )}
+
           </div>
         </div>
       </motion.section>

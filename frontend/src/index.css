@@ -3,6 +3,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Hide scrollbar everywhere */
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; -ms-overflow-style: none; }
+
 html { scroll-behavior: smooth; }
 
 body {

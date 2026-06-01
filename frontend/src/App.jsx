@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import LandingPage from './components/LandingPage'
+import SpiderHive from './components/SpiderHive'
 import ResultsPanel from './components/ResultsPanel'
 import HistorySidebar from './components/HistorySidebar'
 import SpiderFX from './components/SpiderFX'
@@ -12,6 +13,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [progress, setProgress] = useState([])
   const [result, setResult] = useState(null)
+  const [pendingResult, setPendingResult] = useState(null)
   const [error, setError] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState([])
@@ -65,9 +67,8 @@ function App() {
             const msg = JSON.parse(chunk.slice(6))
             if (msg.type === 'progress') setProgress(p => [...p, msg.message])
             if (msg.type === 'result') {
-              setResult(msg.data)
-              setStatus('done')
-              saveToHistory(q, msg.data)
+              setPendingResult({ data: msg.data, q })
+              // result held — SpiderHive will call onComplete when ranker arrives at queen
             }
             if (msg.type === 'error') {
               setError(msg.message)
@@ -77,22 +78,37 @@ function App() {
         }
       }
 
-      setStatus(prev => prev === 'loading' ? 'error' : prev)
+      // only flip to error if we never received a result
+      setPendingResult(prev => {
+        if (!prev) setStatus(s => s === 'loading' ? 'error' : s)
+        return prev
+      })
     } catch (err) {
       setError(err.message || 'Something went wrong')
       setStatus('error')
     }
   }
 
+  const handleHiveComplete = () => {
+    if (pendingResult) {
+      setResult(pendingResult.data)
+      setStatus('done')
+      saveToHistory(pendingResult.q, pendingResult.data)
+      setPendingResult(null)
+    }
+  }
+
   const handleNewSearch = () => {
     setStatus('idle')
     setResult(null)
+    setPendingResult(null)
     setError(null)
     setProgress([])
   }
 
   const showResults = (status === 'done' || status === 'loading') && result
-  const showLanding = !showResults || status === 'idle'
+  const showHive = status === 'loading' && !result
+  const showLanding = !showResults && !showHive
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#080808', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }}>
@@ -142,6 +158,17 @@ function App() {
               >
                 Try Again
               </button>
+            </motion.div>
+          ) : showHive ? (
+            <motion.div
+              key="hive"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+              style={{ position: 'fixed', inset: 0, zIndex: 50 }}
+            >
+              <SpiderHive progress={progress} query={query} resultReady={!!pendingResult} onComplete={handleHiveComplete} />
             </motion.div>
           ) : showResults ? (
             <motion.div

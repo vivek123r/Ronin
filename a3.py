@@ -136,6 +136,10 @@ def get_amazon_reviews_by_asin(asin: str, region: str = "IN") -> dict:
             return {}
 
         detail_data = detail_resp.json().get("data", {})
+        # Debug: print image-related keys once
+        img_keys = [k for k in detail_data if "photo" in k.lower() or "image" in k.lower() or "thumbnail" in k.lower()]
+        if img_keys:
+            print(f"  🖼  Amazon image keys: {img_keys} → {[detail_data[k] for k in img_keys[:2]]}")
         reviews = detail_data.get("top_reviews", []) or detail_data.get("top_reviews_global", [])
         review_texts = [
             {
@@ -156,6 +160,7 @@ def get_amazon_reviews_by_asin(asin: str, region: str = "IN") -> dict:
             "about_product":      detail_data.get("about_product", []),
             "product_price":      detail_data.get("product_price") or detail_data.get("product_minimum_offer_price"),
             "product_url":        detail_data.get("product_url", ""),
+            "product_image_url":  detail_data.get("product_photo") or detail_data.get("product_main_image_url") or detail_data.get("product_photos", [None])[0],
         }
     except Exception as e:
         print(f"⚠️  get_amazon_reviews_by_asin failed: {e}")
@@ -405,6 +410,7 @@ def search_agent_node(state: Blackboard) -> dict:
         print(f"  ⚠️  Amazon search failed: {e}")
         raw_products = []
 
+    image_map: dict = {}  # title -> image url from search results
     amazon_candidates = [
         {
             "title":   p.get("product_title", ""),
@@ -416,6 +422,13 @@ def search_agent_node(state: Blackboard) -> dict:
         for p in raw_products[:20]
         if p.get("product_title") and p.get("asin")  # only keep products with a valid ASIN
     ]
+    for p in raw_products[:20]:
+        title = p.get("product_title", "")
+        img = (p.get("product_photo") or p.get("product_main_image_url")
+               or p.get("thumbnail_image") or p.get("product_thumbnail")
+               or (p.get("product_photos") or [None])[0])
+        if title and img:
+            image_map[title] = img
     for c in amazon_candidates:
         asin_map[c["title"]] = c["asin"]
 
@@ -478,6 +491,18 @@ def search_agent_node(state: Blackboard) -> dict:
         if not asin:
             return product, None
         data = get_amazon_reviews_by_asin(asin)
+        if data:
+            # Fill image from search-result thumbnail if detail API didn't return one
+            if not data.get("product_image_url"):
+                img = image_map.get(product)
+                if not img:
+                    lower = product.lower()
+                    for k, v in image_map.items():
+                        if k.lower()[:30] in lower or lower[:30] in k.lower():
+                            img = v
+                            break
+                if img:
+                    data["product_image_url"] = img
         return product, data or None
 
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -760,6 +785,7 @@ def price_agent_node(state: Blackboard) -> dict:
     priced_count   = sum(1 for v in findings["products_analyzed"].values() if v.get("price_inr", 0) > 0)
     total_count    = max(len(findings["products_analyzed"]), 1)
     avg_confidence = priced_count / total_count
+    print(f"  ✅ Pricing complete: {priced_count}/{total_count} products priced")
 
     return {
         "raw_findings":   [{"agent": "price_agent", "data": findings}],
@@ -774,32 +800,37 @@ def price_agent_node(state: Blackboard) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def ranker_agent_node(state: Blackboard) -> dict:
-    opinions    = state.get("agent_opinions", {})
-    review_data = opinions.get("review_agent", {}).get("products_analyzed", {})
-    price_data  = opinions.get("price_agent",  {}).get("products_analyzed", {})
+    import time as _time
+    _time.sleep(2)
+    opinions     = state.get("agent_opinions", {})
+    review_data  = opinions.get("review_agent", {}).get("products_analyzed", {})
+    price_data   = opinions.get("price_agent",  {}).get("products_analyzed", {})
+    product_cache = opinions.get("search_agent", {}).get("product_cache", {})
     query       = state["query"]
 
     # Step A: derive weights from query intent (1 LLM call)
+    # Base bias: quality 0.8, price 0.1, availability 0.1
+    # LLM can shift weights but quality always dominates unless query is explicitly price-focused
     weight_resp = llm.invoke([
         SystemMessage(content=(
             "You assign product ranking weights based on what a query implies. "
             "Weights must sum to exactly 1.0. "
+            "Default bias: quality=0.8, price=0.1, availability=0.1. "
+            "Only shift price higher if the query explicitly mentions a budget or price limit. "
+            "Quality should always be the dominant weight (minimum 0.6). "
             "Return ONLY raw JSON: {\"quality\": 0.0-1.0, \"price\": 0.0-1.0, \"availability\": 0.0-1.0}\n"
             "Examples:\n"
-            "- 'best gaming laptop' → quality:0.6, price:0.2, availability:0.2\n"
-            "- 'best laptop under 50000' → quality:0.3, price:0.5, availability:0.2\n"
-            "- 'best laptop for office' → quality:0.5, price:0.3, availability:0.2"
+            "- 'best gaming laptop' → quality:0.8, price:0.1, availability:0.1\n"
+            "- 'best laptop under 50000' → quality:0.6, price:0.3, availability:0.1\n"
+            "- 'best laptop for office' → quality:0.8, price:0.1, availability:0.1"
         )),
         HumanMessage(content=f"Query: \"{query}\""),
     ])
     base_w = extract_json(weight_resp.content)
-    # Validate + fallback
-    q_w = float(base_w.get("quality", 0.5) or 0.5)
-    p_w = float(base_w.get("price",   0.3) or 0.3)
-    a_w = float(base_w.get("availability", 0.2) or 0.2)
-    total = q_w + p_w + a_w
-    if abs(total - 1.0) > 0.05:  # normalise if LLM drifted
-        q_w, p_w, a_w = q_w/total, p_w/total, a_w/total
+    # Fixed weights: quality 80%, price 10%, availability 10%
+    q_w = 0.8
+    p_w = 0.1
+    a_w = 0.1
     print(f"  ⚖️  Weights — quality:{q_w:.0%} price:{p_w:.0%} availability:{a_w:.0%}")
 
     ranked_products = []
@@ -808,9 +839,9 @@ def ranker_agent_node(state: Blackboard) -> dict:
         rd = review_data.get(product_name, {})
         pd = price_data.get(product_name, {})
 
-        quality_score      = float(rd.get("rating", 0) or 0)
-        price_score        = float(pd.get("price_score", 0) or 0)
-        availability_score = 100.0 if pd.get("availability", False) else 0.0
+        quality_score      = float(rd.get("rating", 0) or 0)            # 0–100
+        price_score        = min(float(pd.get("price_score", 0) or 0) * 10, 100.0)  # 0–10 → 0–100
+        availability_score = 100.0 if pd.get("availability", False) else 0.0        # 0 or 100
 
         # Step B: per-product data-quality adjustment
         review_conf = float(rd.get("confidence", 1.0) or 1.0)
@@ -838,18 +869,31 @@ def ranker_agent_node(state: Blackboard) -> dict:
 
     ranked_products.sort(key=lambda x: x["combined_score"], reverse=True)
     winner = ranked_products[0] if ranked_products else None
+    if winner:
+        print(f"  🏆 Winner: {winner['name'][:60]}")
+
+    def _get_image(name):
+        """Fuzzy lookup product_image_url from product_cache."""
+        if name in product_cache:
+            return product_cache[name].get("product_image_url")
+        lower = name.lower()
+        for k, v in product_cache.items():
+            if k.lower()[:30] in lower or lower[:30] in k.lower():
+                return v.get("product_image_url")
+        return None
 
     result = {
         "ranked": [
             {
-                "rank":         i + 1,
-                "name":         p["name"],
-                "score":        round(p["combined_score"], 1),
-                "quality":      round(p["quality_score"], 1),
-                "price_score":  round(p["price_score"], 1),
-                "price_inr":    p["price_data"].get("price_inr", "N/A"),
-                "availability": "✅ In Stock" if p["price_data"].get("availability") else "❌ N/A",
-                "url":          p["price_data"].get("url", "N/A"),
+                "rank":              i + 1,
+                "name":              p["name"],
+                "score":             round(p["combined_score"], 1),
+                "quality":           round(p["quality_score"], 1),
+                "price_score":       round(p["price_score"], 1),
+                "price_inr":         p["price_data"].get("price_inr", "N/A"),
+                "availability":      "✅ In Stock" if p["price_data"].get("availability") else "❌ N/A",
+                "url":               p["price_data"].get("url", "N/A"),
+                "product_image_url": _get_image(p["name"]),
             }
             for i, p in enumerate(ranked_products[:10])
         ],
@@ -869,9 +913,10 @@ def ranker_agent_node(state: Blackboard) -> dict:
                 f"{winner['availability_score']:.0f}×{winner['eff_weights']['availability']:.2f} = "
                 f"{winner['combined_score']:.1f}/100"
             ) if winner else "No products found",
-            "benefits":   winner["review_data"].get("benefits", []) if winner else [],
-            "losses":     winner["review_data"].get("losses",   []) if winner else [],
-            "confidence": min(0.95, winner["combined_score"] / 100) if winner else 0.1,
+            "benefits":          winner["review_data"].get("benefits", []) if winner else [],
+            "losses":            winner["review_data"].get("losses",   []) if winner else [],
+            "confidence":        min(0.95, winner["combined_score"] / 100) if winner else 0.1,
+            "product_image_url": _get_image(winner["name"]) if winner else None,
         },
         "weights_used":    {"quality": q_w, "price": p_w, "availability": a_w},
         "methodology":     f"Adaptive weights from query intent | peer-relative price scoring",
