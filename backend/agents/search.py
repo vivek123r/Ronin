@@ -10,7 +10,7 @@ from backend.integrations.amazon import (
 from langchain_core.messages import HumanMessage, SystemMessage
 
 # Flag set to True by api.py before invoking the graph
-API_MODE = False
+API_MODE = True
 
 
 def _best_match(llm_title: str, candidates: list) -> str:
@@ -93,7 +93,7 @@ def search_agent_node(state: Blackboard) -> dict:
         }
 
     # Step 2: LLM picks 2 from top Amazon candidates
-    MAX_PRODUCTS = 2
+    MAX_PRODUCTS = 5
     top_candidates = sorted(amazon_candidates, key=lambda c: float(c.get("rating") or 0), reverse=True)[:15]
 
     response = llm.invoke([
@@ -260,26 +260,36 @@ def comparison_search_agent_node(state: Blackboard) -> dict:
             print(f"     ✅ Resolved '{orig}' → '{title[:50]}' (ASIN: {asin or 'n/a'})")
 
     def _url_fallback(orig_name: str, reason: str) -> tuple:
-        print(f"\n  ⚠️  Could not auto-resolve '{orig_name}': {reason}")
-        url = input(f"  🔗 URL for '{orig_name}' (or Enter to skip): ").strip()
+        from backend.api import request_url_from_frontend
+
+        print(f"  [URL_REQUEST] {orig_name}")
+        url = request_url_from_frontend(orig_name, reason)
         if not url:
+            print(f"  [Search] No URL provided for '{orig_name}' — skipping")
             return orig_name, ""
+
         asin = extract_asin_from_url(url)
         if not asin:
+            print(f"  [Search] Could not extract ASIN from URL for '{orig_name}' — skipping")
             return orig_name, ""
+
         data = get_product_details(asin)
-        if data:
-            return data.get("product_title", orig_name), asin
-        return orig_name, ""
+        if not data:
+            print(f"  [Search] No product data for ASIN {asin} — skipping")
+            return orig_name, ""
+
+        fetched_title = data.get("product_title", orig_name)
+        print(f"  [Search] URL resolved: '{fetched_title[:60]}'")
+        return fetched_title, asin
 
     asin_to_first: dict = {}
     for orig in products_to_compare:
         title, asin = orig_to_resolved.get(orig, (orig, ""))
         if not asin:
-            title, asin = _url_fallback(orig, "auto-resolution returned a different product")
+            title, asin = _url_fallback(orig, "Could not auto-resolve on Amazon")
             orig_to_resolved[orig] = (title, asin)
         if asin and asin in asin_to_first:
-            title, asin = _url_fallback(orig, f"resolved to the same product as '{asin_to_first[asin]}'")
+            title, asin = _url_fallback(orig, f"Resolved to same product as '{asin_to_first[asin]}'")
             orig_to_resolved[orig] = (title, asin)
         if asin:
             asin_to_first[asin] = orig

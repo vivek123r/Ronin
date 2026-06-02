@@ -127,26 +127,21 @@ def resolve_product_name(name: str) -> tuple:
             ),
             HumanMessage(f"User wants: \"{name}\"\n\nCandidates:\n{candidates}"),
         ])
-        import json
         idx  = extract_json(pick.content).get("index", 0)
         best = candidates[min(int(idx), len(candidates) - 1)]
 
-        validation = llm.invoke([
-            SystemMessage(
-                "You are a product match validator. "
-                "Decide if the resolved Amazon product is genuinely the same product the user asked for. "
-                "Be strict about model numbers and generations. "
-                "Return ONLY raw JSON: {\"match\": true|false, \"reason\": \"short explanation\"}"
-            ),
+        val = llm.invoke([
+            SystemMessage("You are a product match validator. Answer ONLY 'yes' or 'no'."),
             HumanMessage(
-                f"User asked for: \"{name}\"\n"
-                f"Amazon resolved to: \"{best['title']}\"\n"
-                "Is this the correct product?"
+                f"User searched for: \"{name}\"\n"
+                f"Amazon returned: \"{best['title']}\"\n\n"
+                "Is this the EXACT product the user asked for?\n"
+                "- 'yes' if it matches (different storage/color/5G suffix is fine)\n"
+                "- 'no' if it is a different model tier (e.g. Plus, Pro, Max, Ultra, Mini, FE, Lite when the user did NOT ask for that tier)"
             ),
         ])
-        val = extract_json(validation.content)
-        if val.get("match") is False:
-            print(f"  ⚠️  LLM validation failed for '{name}': {val.get('reason', '')}")
+        if val.content.strip().lower().startswith("no"):
+            print(f"  ⚠️  resolve_product_name: '{best['title'][:60]}' is wrong variant for '{name}' — needs URL")
             return name, ""
 
         return best["title"], best["asin"]

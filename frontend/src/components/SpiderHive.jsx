@@ -272,7 +272,24 @@ function useHiveState(progress) {
     return Math.round(vals.reduce((s, v) => s + v, 0) / 4)
   }, [agents])
 
-  return { milestones, agents, phase, overallProgress }
+  // Feed items for the left sidebar live stream
+  const [feedItems, setFeedItems] = useState([])
+  const feedProcessed = useRef(0)
+  useEffect(() => {
+    if (progress.length <= feedProcessed.current) return
+    const newMsgs = progress.slice(feedProcessed.current)
+    feedProcessed.current = progress.length
+    newMsgs.forEach(msg => {
+      const src = /amazon/i.test(msg) ? 'amazon' : /reddit/i.test(msg) ? 'reddit'
+        : /youtube/i.test(msg) ? 'youtube' : /flipkart/i.test(msg) ? 'flipkart'
+        : /google/i.test(msg) ? 'google' : null
+      if (src && msg.trim().length > 4) {
+        setFeedItems(prev => [...prev.slice(-19), { text: msg.trim().slice(0, 58), source: src, id: Date.now() + Math.random(), ts: Date.now() }])
+      }
+    })
+  }, [progress.length])
+
+  return { milestones, agents, phase, overallProgress, feedItems }
 }
 
 /* ─── AgentCard ─────────────────────────────────────────────────────────── */
@@ -468,12 +485,14 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
+    const getW = () => canvas.parentElement?.offsetWidth || window.innerWidth
+    const getH = () => canvas.parentElement?.offsetHeight || window.innerHeight
+    canvas.width = getW()
+    canvas.height = getH()
 
     const resize = () => {
-      canvas.width = window.innerWidth
-      canvas.height = window.innerHeight
+      canvas.width = getW()
+      canvas.height = getH()
       buildLayout()
     }
 
@@ -1043,119 +1062,364 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
   return <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, display: 'block' }} />
 }
 
-/* ─── Main SpiderHive component ─────────────────────────────────────────── */
-export default function SpiderHive({ progress, query, resultReady, onComplete }) {
-  const { milestones, agents, phase, overallProgress } = useHiveState(progress)
+/* ─── Shared panel styles ────────────────────────────────────────────────── */
+const _card = { background: 'rgba(10,0,0,0.90)', border: '1px solid rgba(220,20,60,0.25)', borderRadius: 11, padding: '16px 18px', backdropFilter: 'blur(14px)' }
+const _sec  = { fontSize: 13, letterSpacing: '0.16em', color: 'rgba(220,20,60,0.9)', fontFamily: 'monospace', fontWeight: 700 }
+const _lbl  = { fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace', letterSpacing: '0.05em', marginBottom: 4 }
+const SRC_COLORS = { amazon:'#ff9900', reddit:'#ff4500', youtube:'#ff2020', flipkart:'#2874f0', google:'#4285f4' }
 
-  const queenDef = { id: 'queen', label: 'RONIN CORE', color: '#ffd700' }
-
+function LiveDot() {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#080808', overflow: 'hidden' }}>
+    <motion.span animate={{ opacity:[1,0.3,1] }} transition={{ duration:1.2, repeat:Infinity }}
+      style={{ fontSize:11, color:'#e63946', fontFamily:'monospace', letterSpacing:'0.1em' }}>● LIVE</motion.span>
+  )
+}
 
-      {/* Canvas — full screen web */}
-      <HiveCanvas agents={agents} phase={phase} resultReady={resultReady} onComplete={onComplete} />
+function StatusPill({ status, small }) {
+  const live = status === 'scanning' || status === 'active'
+  const done = status === 'done'
+  return (
+    <motion.span animate={{ opacity: live ? [1,0.4,1] : 1 }} transition={{ duration:1.1, repeat: live ? Infinity : 0 }}
+      style={{ fontSize: small?10:11, fontFamily:'monospace', fontWeight:700, padding: small?'2px 7px':'3px 9px', borderRadius:4,
+        background: done?'rgba(74,222,128,0.12)':live?'rgba(220,20,60,0.12)':'rgba(255,255,255,0.04)',
+        color: done?'#4ade80':live?'#ff6b75':'#475569',
+        border:`1px solid ${done?'rgba(74,222,128,0.3)':live?'rgba(220,20,60,0.28)':'rgba(255,255,255,0.06)'}`,
+        letterSpacing:'0.07em', whiteSpace:'nowrap' }}>
+      {done ? '✓ DONE' : live ? '● LIVE' : 'IDLE'}
+    </motion.span>
+  )
+}
 
-      {/* Left: milestone feed */}
-      <MilestoneFeed milestones={milestones} />
-
-      {/* Right: agent status cards */}
-      <motion.div
-        initial={{ x: 270, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ delay: 0.5, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        style={{
-          position: 'absolute', right: 0, top: 0, bottom: 0, width: 255,
-          background: 'linear-gradient(270deg, rgba(4,0,0,0.94) 72%, transparent)',
-          padding: '28px 16px',
-          display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center',
-          zIndex: 10, pointerEvents: 'none',
-        }}
-      >
-        <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(220,20,60,0.6)', marginBottom: 4, fontFamily: 'monospace', fontWeight: 700 }}>
-          ◈ AGENT STATUS
+/* ── Top navbar ── */
+function HiveNavbar({ phase }) {
+  const tabs = ['HIVE','FEED','AGENTS','ANALYTICS','TARGETS']
+  return (
+    <motion.div initial={{ y:-56, opacity:0 }} animate={{ y:0, opacity:1 }} transition={{ duration:0.5 }}
+      style={{ height:56, background:'rgba(6,0,0,0.97)', borderBottom:'1px solid rgba(220,20,60,0.2)',
+        display:'flex', alignItems:'center', padding:'0 20px', flexShrink:0, zIndex:20, pointerEvents:'all' }}>
+      {/* Logo */}
+      <div style={{ display:'flex', alignItems:'center', gap:11, marginRight:32 }}>
+        <div style={{ width:36, height:36, borderRadius:9, background:'radial-gradient(circle,#e63946,#6a0000)',
+          display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 18px rgba(220,20,60,0.55)' }}>
+          <SpiderIcon color="#fff" size={20} />
         </div>
-
-        {/* Queen card */}
-        <AgentCard
-          def={queenDef}
-          state={{ status: agents.queen.status !== 'idle' ? 'active' : 'idle', progress: overallProgress, source: '' }}
-          isQueen
-        />
-
-        <div style={{ height: 1, background: 'rgba(220,20,60,0.1)', margin: '2px 0' }} />
-
-        {/* Sub-agent cards */}
-        {SUB_AGENTS.map(def => (
-          <div key={def.id}>
-            <AgentCard def={def} state={agents[def.id]} />
-            {/* Reviewer sub-agent indicators */}
-            {def.id === 'reviewer' && (
-              <div style={{ display: 'flex', gap: 4, paddingLeft: 8, marginTop: 4 }}>
-                {REVIEWER_SOURCE_WAVE_MAP.map(sub => {
-                  const st = agents[sub.subId]
-                  const isDone = st?.status === 'done'
-                  const isActive = st?.status === 'scanning'
-                  return (
-                    <div key={sub.subId} style={{
-                      flex: 1, padding: '4px 6px', borderRadius: 5,
-                      background: isDone ? 'rgba(74,222,128,0.08)' : isActive ? 'rgba(220,20,60,0.08)' : 'rgba(255,255,255,0.03)',
-                      border: `1px solid ${isDone ? 'rgba(74,222,128,0.3)' : isActive ? `${sub.color}44` : 'rgba(255,255,255,0.06)'}`,
-                      textAlign: 'center',
-                    }}>
-                      <div style={{ fontSize: 8, fontFamily: 'monospace', fontWeight: 700, color: isDone ? '#4ade80' : isActive ? sub.color : '#334155', letterSpacing: '0.05em' }}>
-                        {sub.sourceLabel}
-                      </div>
-                      <div style={{ fontSize: 7, fontFamily: 'monospace', color: isDone ? '#4ade80' : isActive ? 'rgba(220,20,60,0.7)' : '#1e293b', marginTop: 1 }}>
-                        {isDone ? '✓' : isActive ? '●' : '○'}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+        <div>
+          <div style={{ fontSize:17, fontWeight:900, color:'#fff', fontFamily:'Space Grotesk,sans-serif', letterSpacing:'0.12em', lineHeight:1.1 }}>
+            WEB <span style={{ color:'#e63946' }}>|</span> INTEL
+          </div>
+          <div style={{ fontSize:10, color:'rgba(220,20,60,0.6)', fontFamily:'monospace', letterSpacing:'0.13em' }}>
+            ● NETWORK ACTIVE · {600 + phase*60} NODES
+          </div>
+        </div>
+      </div>
+      {/* Tabs */}
+      <div style={{ display:'flex', gap:3, flex:1, justifyContent:'center' }}>
+        {tabs.map((t,i) => (
+          <div key={t} style={{ padding:'7px 18px', borderRadius:7, fontSize:13, fontFamily:'monospace', fontWeight:700,
+            letterSpacing:'0.08em', cursor:'default',
+            background: i===0?'rgba(220,20,60,0.2)':'transparent',
+            color: i===0?'#ff8c94':'rgba(255,255,255,0.35)',
+            border: i===0?'1px solid rgba(220,20,60,0.45)':'1px solid transparent' }}>
+            {t}
           </div>
         ))}
-      </motion.div>
+      </div>
+      {/* Right */}
+      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+        <div style={{ fontSize:12, color:'rgba(255,255,255,0.2)', fontFamily:'monospace', padding:'5px 12px',
+          background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:6 }}>
+          Search the web hive...
+        </div>
+        {['⚙','🔔'].map(ic => (
+          <div key={ic} style={{ width:32, height:32, borderRadius:7, background:'rgba(255,255,255,0.05)',
+            display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.35)', fontSize:15 }}>{ic}</div>
+        ))}
+        <div style={{ width:32, height:32, borderRadius:'50%', background:'radial-gradient(circle,#e63946,#8b0000)',
+          display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:14, fontWeight:900,
+          boxShadow:'0 0 12px rgba(220,20,60,0.55)' }}>R</div>
+      </div>
+    </motion.div>
+  )
+}
 
-      {/* Center overlay: phase label */}
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%',
-        transform: 'translate(-50%, calc(-50% + 110px))',
-        textAlign: 'center', pointerEvents: 'none', zIndex: 5,
-      }}>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={phase}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.4 }}
-            style={{ fontSize: 10, color: 'rgba(255,120,130,0.95)', letterSpacing: '0.2em', fontFamily: 'monospace', fontWeight: 700 }}
-          >
-            {PHASE_LABELS[phase]}
-          </motion.div>
-        </AnimatePresence>
+/* ── Left sidebar ── */
+function HiveLeftPanel({ agents, overallProgress, feedItems, phase }) {
+  const AGENT_LIST = [
+    { id:'hunter',  label:'HUNTER',  sub:'Amazon Crawler',   color:'#ff7a3d' },
+    { id:'ranker',  label:'RANKER',  sub:'Relevance Engine', color:'#9b1aff' },
+    { id:'reviewer',label:'REVIEWER',sub:'Content Analyzer', color:'#e63946' },
+    { id:'pricer',  label:'PRICER',  sub:'Price Tracker',    color:'#ff3366' },
+  ]
+  return (
+    <motion.div initial={{ x:-300, opacity:0 }} animate={{ x:0, opacity:1 }} transition={{ delay:0.3, duration:0.55 }}
+      style={{ width:300, flexShrink:0, display:'flex', flexDirection:'column', gap:10,
+        padding:'12px 0 12px 14px', overflowY:'auto', zIndex:10, pointerEvents:'all' }}>
+
+      {/* Spider Core */}
+      <div style={_card}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+          <div style={{ width:38, height:38, borderRadius:10, background:'radial-gradient(circle,#e63946,#7a0000)',
+            display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 16px rgba(220,20,60,0.55)' }}>
+            <SpiderIcon color="#fff" size={22} />
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:'#fff', letterSpacing:'0.1em', fontFamily:'monospace' }}>SPIDER CORE</div>
+            <div style={{ fontSize:12, color:'rgba(220,20,60,0.7)', fontFamily:'monospace' }}>Orchestrator Active</div>
+          </div>
+          <StatusPill status="active" />
+        </div>
+        <div style={{ display:'flex', gap:20 }}>
+          <div>
+            <div style={_lbl}>Network Health</div>
+            <div style={{ fontSize:28, fontWeight:900, color:'#4ade80', fontFamily:'monospace', lineHeight:1 }}>{overallProgress}%</div>
+          </div>
+          <div>
+            <div style={_lbl}>Phase</div>
+            <div style={{ fontSize:13, color:'#ff8c94', fontFamily:'monospace', fontWeight:700 }}>{PHASE_LABELS[phase]}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Active Agents */}
+      <div style={_card}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+          <div style={_sec}>◈ ACTIVE AGENTS</div>
+          <span style={{ fontSize:12, fontFamily:'monospace', color:'rgba(220,20,60,0.7)' }}>
+            {AGENT_LIST.filter(d => agents[d.id]?.status !== 'idle').length} / {AGENT_LIST.length}
+          </span>
+        </div>
+        {AGENT_LIST.map(def => {
+          const ag = agents[def.id]
+          const live = ag?.status === 'scanning' || ag?.status === 'active'
+          const done = ag?.status === 'done'
+          return (
+            <div key={def.id} style={{ display:'flex', alignItems:'center', gap:9, padding:'8px 0',
+              borderBottom:'1px solid rgba(255,255,255,0.05)' }}>
+              <SpiderIcon color={def.color} size={18} />
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:700, color: done?'#4ade80':live?'#fff':'#475569', fontFamily:'monospace', letterSpacing:'0.06em' }}>{def.label}</div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', fontFamily:'monospace' }}>{def.sub}</div>
+              </div>
+              <StatusPill status={ag?.status||'idle'} small />
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Feed Stream */}
+      <div style={{ ..._card, flex:1 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+          <div style={_sec}>◈ FEED STREAM</div>
+          <LiveDot />
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+          <AnimatePresence initial={false}>
+            {(feedItems.length ? feedItems : []).slice(-7).reverse().map((item, i) => (
+              <motion.div key={item.id} initial={{ opacity:0, x:-10 }} animate={{ opacity:1, x:0 }} exit={{ opacity:0 }}
+                style={{ display:'flex', alignItems:'flex-start', gap:7 }}>
+                <div style={{ width:8, height:8, borderRadius:'50%', marginTop:4, flexShrink:0,
+                  background: SRC_COLORS[item.source]||'#e63946',
+                  boxShadow: i===0?`0 0 7px ${SRC_COLORS[item.source]||'#e63946'}`:'none' }} />
+                <div style={{ flex:1, fontSize:12, color: i===0?'#e2e8f0':'rgba(255,255,255,0.45)', fontFamily:'monospace', lineHeight:1.5 }}>
+                  {item.text.slice(0,50)}
+                </div>
+                <div style={{ fontSize:10, color:'rgba(255,255,255,0.22)', fontFamily:'monospace', flexShrink:0 }}>
+                  {Math.round((Date.now()-item.ts)/1000)}s
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          {!feedItems.length && <div style={{ fontSize:12, color:'rgba(220,20,60,0.35)', fontFamily:'monospace' }}>Awaiting data stream...</div>}
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+/* ── Right sidebar ── */
+function HiveRightPanel({ milestones, agents, query, phase }) {
+  const sentimentPct = agents.reviewer?.status === 'done' ? 82 : phase >= 2 ? Math.min(75, 30 + phase*12) : 0
+  const budgetM = milestones.find(m => m.text?.startsWith('Budget:'))
+  const budget = budgetM?.text?.replace('Budget:','').trim() || '—'
+
+  return (
+    <motion.div initial={{ x:300, opacity:0 }} animate={{ x:0, opacity:1 }} transition={{ delay:0.3, duration:0.55 }}
+      style={{ width:300, flexShrink:0, display:'flex', flexDirection:'column', gap:10,
+        padding:'12px 14px 12px 0', overflowY:'auto', zIndex:10, pointerEvents:'all' }}>
+
+      {/* Intelligence Summary */}
+      <div style={_card}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+          <div style={_sec}>◈ INTELLIGENCE SUMMARY</div>
+          <LiveDot />
+        </div>
+        <div style={{ marginBottom:12 }}>
+          <div style={_lbl}>Overall Sentiment</div>
+          <div style={{ display:'flex', alignItems:'baseline', gap:8 }}>
+            <span style={{ fontSize:28, fontWeight:900, fontFamily:'monospace', color: sentimentPct>60?'#4ade80':'#ff8c94', lineHeight:1 }}>{sentimentPct}%</span>
+            <span style={{ fontSize:14, color:'rgba(255,255,255,0.5)', fontFamily:'monospace' }}>
+              {agents.reviewer?.status==='done'?'Positive': phase>=2?'Analyzing...':'Pending'}
+            </span>
+          </div>
+          <div style={{ height:4, background:'rgba(255,255,255,0.07)', borderRadius:2, marginTop:7, overflow:'hidden' }}>
+            <motion.div animate={{ width:`${sentimentPct}%` }} transition={{ duration:1 }}
+              style={{ height:'100%', borderRadius:2, background: sentimentPct>60?'linear-gradient(90deg,#4ade80,#22c55e)':'linear-gradient(90deg,#e63946,#ff8c94)' }} />
+          </div>
+        </div>
+        <div style={{ marginBottom:12 }}>
+          <div style={{ fontSize:11, color:'rgba(255,255,255,0.45)', fontFamily:'monospace', letterSpacing:'0.1em', marginBottom:7 }}>LATEST SIGNALS</div>
+          {milestones.slice(-4).reverse().map((m,i) => (
+            <div key={m.id} style={{ display:'flex', gap:6, marginBottom:6, alignItems:'flex-start' }}>
+              <span style={{ color: i===0?'#e63946':'rgba(220,20,60,0.35)', fontSize:10, marginTop:2 }}>◆</span>
+              <span style={{ fontSize:12, color: i===0?'#e2e8f0':'rgba(255,255,255,0.42)', fontFamily:'monospace', lineHeight:1.5 }}>{m.text}</span>
+            </div>
+          ))}
+          {!milestones.length && <div style={{ fontSize:12, color:'rgba(255,255,255,0.2)', fontFamily:'monospace' }}>Awaiting signals...</div>}
+        </div>
         {query && (
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 5, fontFamily: 'monospace', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            "{query}"
+          <div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.45)', fontFamily:'monospace', letterSpacing:'0.1em', marginBottom:7 }}>TRENDING KEYWORDS</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+              {query.toLowerCase().split(/\s+/).filter(w=>w.length>2).map((w,i) => (
+                <span key={i} style={{ fontSize:13, fontFamily:'monospace', fontWeight:700,
+                  color:['#e63946','#ff9900','#4ade80','#9b1aff','#4285f4'][i%5] }}>{w}</span>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Top center: title */}
-      <motion.div
-        initial={{ opacity: 0, y: -16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.5 }}
-        style={{ position: 'absolute', top: 22, left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', zIndex: 10 }}
-      >
-        <div style={{ fontFamily: 'monospace', fontSize: 9, letterSpacing: '0.3em', color: 'rgba(220,20,60,0.4)', marginBottom: 3 }}>
-          [ SPIDER INTELLIGENCE NETWORK ]
+      {/* Target */}
+      {query && (
+        <div style={_card}>
+          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:10 }}>
+            <div style={_sec}>◈ TARGET</div>
+            <LiveDot />
+          </div>
+          <div style={{ fontSize:15, fontWeight:800, color:'#ff8c94', fontFamily:'monospace', letterSpacing:'0.07em', marginBottom:10 }}>
+            {query.toUpperCase().slice(0,24)}{query.length>24?'…':''}
+          </div>
+          <div style={{ marginBottom:10 }}>
+            <div style={_lbl}>Price Range</div>
+            <div style={{ fontSize:16, fontFamily:'monospace', color:'#e2e8f0', fontWeight:700 }}>{budget}</div>
+          </div>
+          <div style={{ marginBottom:10 }}>
+            <div style={_lbl}>Sources</div>
+            <div style={{ display:'flex', gap:6, marginTop:4, flexWrap:'wrap' }}>
+              {Object.entries(SRC_COLORS).map(([src,col]) => (
+                <div key={src} style={{ width:30, height:30, borderRadius:7, background:'#111',
+                  border:`1px solid ${col}55`, display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:14, fontWeight:900, color:col, fontFamily:'monospace' }}>
+                  {src[0].toUpperCase()}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+              <div style={_lbl}>Status</div>
+              <div style={{ fontSize:12, fontFamily:'monospace', color:'#e63946' }}>{phase>=4?'100%':`${phase*25}%`}</div>
+            </div>
+            <div style={{ height:4, background:'rgba(255,255,255,0.07)', borderRadius:2, overflow:'hidden' }}>
+              <motion.div animate={{ width:`${phase*25}%` }} transition={{ duration:0.8 }}
+                style={{ height:'100%', background:'linear-gradient(90deg,#e63946,#ff8c94)', borderRadius:2 }} />
+            </div>
+          </div>
         </div>
-        <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 'clamp(1rem,2.2vw,1.4rem)', color: '#fff', letterSpacing: '0.12em' }}>
-          THE SPIDER HIVE
+      )}
+    </motion.div>
+  )
+}
+
+/* ── Bottom data flow bar ── */
+function HiveDataBar({ phase }) {
+  const [tick, setTick] = useState(0)
+  useEffect(() => { const t = setInterval(()=>setTick(n=>n+1), 1000); return ()=>clearInterval(t) }, [])
+  const rps   = phase>=1 ? (8000+Math.sin(tick*0.7)*2000).toFixed(0) : '0'
+  const coll  = (phase*0.6+Math.sin(tick*0.3)*0.1).toFixed(1)
+  const succ  = phase>=1 ? (98.5+Math.sin(tick)*1.2).toFixed(1) : '0'
+  const lat   = phase>=1 ? (130+Math.sin(tick*1.1)*28).toFixed(0) : '—'
+  const conns = phase>=1 ? 600+phase*60 : 0
+  return (
+    <div style={{ height:72, background:'rgba(4,0,0,0.97)', borderTop:'1px solid rgba(220,20,60,0.14)',
+      display:'flex', alignItems:'center', padding:'0 22px', flexShrink:0, zIndex:10 }}>
+      <div style={{ fontSize:11, letterSpacing:'0.14em', color:'rgba(220,20,60,0.7)', fontFamily:'monospace', fontWeight:700, marginRight:18, whiteSpace:'nowrap' }}>◈ DATA FLOW MONITOR</div>
+      <LiveDot />
+      {[['Requests / s', rps],['Data Collected',`${coll} TB`],['Success Rate',`${succ}%`],['Avg Response',`${lat}ms`],['Active Connections',conns]].map(([lbl,val]) => (
+        <div key={lbl} style={{ flex:1, padding:'0 16px', borderLeft:'1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ fontSize:11, color:'rgba(255,255,255,0.38)', fontFamily:'monospace', marginBottom:3 }}>{lbl}</div>
+          <div style={{ fontSize:20, fontWeight:900, fontFamily:'monospace', color:'#fff' }}>{val}</div>
         </div>
-      </motion.div>
+      ))}
+    </div>
+  )
+}
+
+/* ─── Main SpiderHive component ─────────────────────────────────────────── */
+export default function SpiderHive({ progress, query, resultReady, onComplete }) {
+  const { milestones, agents, phase, overallProgress, feedItems } = useHiveState(progress)
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'#080808', overflow:'hidden', display:'flex', flexDirection:'column', fontFamily:'Inter,sans-serif' }}>
+
+      {/* Top navbar */}
+      <HiveNavbar phase={phase} />
+
+      {/* Main body row */}
+      <div style={{ flex:1, display:'flex', overflow:'hidden', position:'relative' }}>
+
+        {/* Left panel */}
+        <HiveLeftPanel agents={agents} overallProgress={overallProgress} feedItems={feedItems} phase={phase} />
+
+        {/* Center — canvas + overlays */}
+        <div style={{ flex:1, position:'relative', overflow:'hidden' }}>
+          <HiveCanvas agents={agents} phase={phase} resultReady={resultReady} onComplete={onComplete} />
+
+          {/* Phase label */}
+          <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%, calc(-50% + 110px))', textAlign:'center', pointerEvents:'none', zIndex:5 }}>
+            <AnimatePresence mode="wait">
+              <motion.div key={phase} initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-8 }} transition={{ duration:0.4 }}
+                style={{ fontSize:10, color:'rgba(255,120,130,0.95)', letterSpacing:'0.2em', fontFamily:'monospace', fontWeight:700 }}>
+                {PHASE_LABELS[phase]}
+              </motion.div>
+            </AnimatePresence>
+            {query && (
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.6)', marginTop:5, fontFamily:'monospace', maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                "{query}"
+              </div>
+            )}
+          </div>
+
+          {/* Title */}
+          <motion.div initial={{ opacity:0, y:-16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.2, duration:0.5 }}
+            style={{ position:'absolute', top:16, left:0, right:0, textAlign:'center', pointerEvents:'none', zIndex:10 }}>
+            <div style={{ fontFamily:'monospace', fontSize:9, letterSpacing:'0.3em', color:'rgba(220,20,60,0.5)', marginBottom:3 }}>
+              [ SPIDER INTELLIGENCE NETWORK ]
+            </div>
+            <div style={{ fontFamily:'Space Grotesk,sans-serif', fontWeight:900, fontSize:'clamp(1rem,2.2vw,1.4rem)', color:'#fff', letterSpacing:'0.12em' }}>
+              THE SPIDER HIVE
+            </div>
+          </motion.div>
+
+          {/* Red ambient glow */}
+          <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:1,
+            background:'radial-gradient(ellipse 60% 55% at 50% 50%, rgba(220,20,60,0.09) 0%, transparent 70%)' }} />
+        </div>
+
+        {/* Right panel */}
+        <HiveRightPanel milestones={milestones} agents={agents} query={query} phase={phase} />
+      </div>
+
+      {/* Bottom data flow bar */}
+      <HiveDataBar phase={phase} />
+
+      {/* System status footer */}
+      <div style={{ height:28, background:'rgba(4,0,0,0.98)', borderTop:'1px solid rgba(220,20,60,0.08)',
+        display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 18px', flexShrink:0 }}>
+        <div style={{ fontSize:11, fontFamily:'monospace', color:'rgba(74,222,128,0.6)', letterSpacing:'0.1em' }}>● SYSTEM STATUS &nbsp; All systems operational</div>
+        <div style={{ fontSize:11, fontFamily:'monospace', color:'rgba(255,255,255,0.18)' }}>RONIN v2.4.1 &nbsp; © 2024 Spider Intel Network</div>
+        <div style={{ fontSize:11, fontFamily:'monospace', color:'rgba(74,222,128,0.5)' }}>● Connected to {600+phase*60} nodes &nbsp; ▲ 2.4 TB/s</div>
+      </div>
     </div>
   )
 }

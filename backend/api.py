@@ -33,6 +33,10 @@ history: deque = deque(maxlen=20)
 # ── Thread pool for the blocking pipeline ────────────────────────────────────
 executor = ThreadPoolExecutor(max_workers=4)
 
+# ── Per-request URL prompt store (thread_id → {event, result, queue, loop}) ──
+_url_requests: Dict[str, Any] = {}
+_url_lock = threading.Lock()
+
 app = FastAPI(title="RONIN — Product Research API")
 
 app.add_middleware(
@@ -68,6 +72,46 @@ def sse_event(data: dict) -> str:
 
 # ── Per-request stdout capture → SSE queue ───────────────────────────────────
 _thread_local = threading.local()
+
+
+def request_url_from_frontend(product_name: str, reason: str) -> str:
+    """Called from pipeline thread. Sends url_request SSE event, blocks until frontend responds."""
+    tid = str(threading.get_ident())
+    registered_tid = tid
+    entry = _url_requests.get(tid)
+    sys.__stdout__.write(f"[DEBUG request_url] called tid={tid} entry={'FOUND' if entry else 'MISSING'} all_keys={list(_url_requests.keys())}\n")
+    sys.__stdout__.flush()
+    if not entry:
+        with _url_lock:
+            for k, e in _url_requests.items():
+                if e.get("pending") is None:
+                    entry = e
+                    registered_tid = k
+                    break
+        sys.__stdout__.write(f"[DEBUG request_url] fallback registered_tid={registered_tid} entry={'FOUND' if entry else 'MISSING'}\n")
+        sys.__stdout__.flush()
+    if not entry:
+        sys.__stdout__.write(f"[DEBUG request_url] NO ENTRY — returning empty\n")
+        sys.__stdout__.flush()
+        return ""
+    evt = threading.Event()
+    with _url_lock:
+        entry["pending"] = {"event": evt, "result": None, "product": product_name, "reason": reason}
+    sys.__stdout__.write(f"[DEBUG request_url] sending SSE url_request with thread_id={registered_tid}\n")
+    sys.__stdout__.flush()
+    asyncio.run_coroutine_threadsafe(
+        entry["queue"].put({"type": "url_request", "product": product_name, "reason": reason, "thread_id": registered_tid}),
+        entry["loop"],
+    )
+    sys.__stdout__.write(f"[DEBUG request_url] blocking on evt.wait...\n")
+    sys.__stdout__.flush()
+    evt.wait(timeout=120)
+    with _url_lock:
+        result = entry.get("pending", {}).get("result") or ""
+        entry["pending"] = None
+    sys.__stdout__.write(f"[DEBUG request_url] evt fired, result='{result}'\n")
+    sys.__stdout__.flush()
+    return result
 
 
 class SSECapture(io.StringIO):
@@ -111,7 +155,10 @@ async def search(request: Request):
         error_container:  Dict[str, Any] = {}
 
         def _run():
-            _rc.set_config(config)   # inject per-request keys
+            tid = str(threading.get_ident())
+            with _url_lock:
+                _url_requests[tid] = {"queue": queue, "loop": loop, "pending": None}
+            _rc.set_config(config)
             old_stdout = sys.stdout
             sys.stdout = capture
             try:
@@ -122,6 +169,8 @@ async def search(request: Request):
             finally:
                 sys.stdout = old_stdout
                 _rc.clear_config()
+                with _url_lock:
+                    _url_requests.pop(tid, None)
                 asyncio.run_coroutine_threadsafe(queue.put(None), loop)
 
         executor.submit(_run)
@@ -153,6 +202,41 @@ async def search(request: Request):
             "Connection":       "keep-alive",
         },
     )
+
+
+# ── /url_response endpoint — frontend submits URL back to waiting pipeline ───
+@app.post("/url_response")
+async def url_response(request: Request):
+    body    = await request.json()
+    tid     = body.get("thread_id", "")
+    url     = body.get("url", "").strip()
+    sys.__stdout__.write(f"[DEBUG url_response] tid={tid} url={url[:80]} all_keys={list(_url_requests.keys())}\n")
+    sys.__stdout__.flush()
+    with _url_lock:
+        entry = _url_requests.get(tid)
+    if not entry or not entry.get("pending"):
+        sys.__stdout__.write(f"[DEBUG url_response] FAILED — entry={entry} pending={entry.get('pending') if entry else None}\n")
+        sys.__stdout__.flush()
+        return JSONResponse({"ok": False, "error": "no pending request"})
+    with _url_lock:
+        entry["pending"]["result"] = url
+        entry["pending"]["event"].set()
+    sys.__stdout__.write(f"[DEBUG url_response] SUCCESS — event fired\n")
+    sys.__stdout__.flush()
+    return JSONResponse({"ok": True})
+
+
+# ── /url_pending — frontend polls to get the thread_id for a live search ─────
+@app.get("/url_pending")
+async def url_pending():
+    """Returns any pending URL request (product + thread_id) so frontend can display the modal."""
+    with _url_lock:
+        for tid, entry in _url_requests.items():
+            pending = entry.get("pending")
+            if pending and not pending["event"].is_set():
+                return JSONResponse({"pending": True, "thread_id": tid,
+                                     "product": pending["product"], "reason": pending["reason"]})
+    return JSONResponse({"pending": False})
 
 
 # ── /providers endpoint ───────────────────────────────────────────────────────

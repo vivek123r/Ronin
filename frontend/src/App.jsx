@@ -9,6 +9,90 @@ import SettingsModal, { loadConfig } from './components/SettingsModal'
 
 const HISTORY_KEY = 'ronin_history'
 
+function UrlRequestModal({ request, onSubmit }) {
+  const [url, setUrl] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  // Reset input when a new request comes in (retry scenario)
+  useEffect(() => { setUrl(''); setSubmitting(false) }, [request.product, request.reason])
+
+  const handleSubmit = async (val) => {
+    setSubmitting(true)
+    await onSubmit(val)
+    // modal stays open until next url_request or pipeline resumes — parent handles close
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:300, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      {/* Backdrop */}
+      <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.75)', backdropFilter:'blur(6px)' }} onClick={() => onSubmit('')} />
+      {/* Modal */}
+      <div style={{
+        position:'relative', zIndex:301, width:'min(520px,92vw)',
+        background:'rgba(8,0,0,0.97)', border:'1px solid rgba(220,20,60,0.35)',
+        borderRadius:16, padding:'28px 28px 24px', boxShadow:'0 0 60px rgba(220,20,60,0.25)',
+      }}>
+        <div style={{ fontSize:10, letterSpacing:'0.22em', color:'rgba(220,20,60,0.6)', fontFamily:'monospace', marginBottom:6 }}>◈ PRODUCT URL REQUIRED</div>
+        <div style={{ fontSize:18, fontWeight:900, color:'#fff', fontFamily:'Space Grotesk,sans-serif', marginBottom:8 }}>
+          Can't auto-resolve product
+        </div>
+        <div style={{ fontSize:13, color:'rgba(255,255,255,0.55)', fontFamily:'monospace', marginBottom:6 }}>
+          {request.reason}
+        </div>
+        <div style={{ fontSize:14, color:'#ff8c94', fontFamily:'monospace', fontWeight:700, marginBottom:20,
+          padding:'8px 12px', background:'rgba(220,20,60,0.08)', borderRadius:7, border:'1px solid rgba(220,20,60,0.18)' }}>
+          {request.product}
+        </div>
+        {submitting ? (
+          <div style={{ fontSize:13, color:'rgba(220,20,60,0.7)', fontFamily:'monospace', textAlign:'center', padding:'20px 0' }}>
+            <motion.span animate={{ opacity:[1,0.3,1] }} transition={{ duration:1, repeat:Infinity }}>
+              ● Validating product...
+            </motion.span>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', fontFamily:'monospace', marginBottom:8 }}>
+              Paste an Amazon product URL to continue, or skip this product:
+            </div>
+            <input
+              autoFocus
+              type="text"
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSubmit(url) }}
+              placeholder="https://www.amazon.in/dp/..."
+              style={{
+                width:'100%', boxSizing:'border-box',
+                background:'rgba(255,255,255,0.05)', border:'1px solid rgba(220,20,60,0.3)',
+                borderRadius:9, padding:'11px 14px', color:'#e2e8f0',
+                fontSize:13, fontFamily:'monospace', outline:'none', marginBottom:18,
+              }}
+              onFocus={e => e.target.style.borderColor='rgba(220,20,60,0.7)'}
+              onBlur={e => e.target.style.borderColor='rgba(220,20,60,0.3)'}
+            />
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+              <button onClick={() => handleSubmit('')}
+                style={{ padding:'9px 20px', borderRadius:8, border:'1px solid rgba(255,255,255,0.1)',
+                  background:'transparent', color:'rgba(255,255,255,0.4)', fontSize:12, fontFamily:'monospace', cursor:'pointer' }}>
+                Skip this product
+              </button>
+              <button onClick={() => handleSubmit(url)} disabled={!url.trim()}
+                style={{ padding:'9px 24px', borderRadius:8, border:'none',
+                  background: url.trim() ? 'linear-gradient(135deg,#e63946,#c1121f)' : 'rgba(255,255,255,0.08)',
+                  color: url.trim() ? '#fff' : 'rgba(255,255,255,0.3)',
+                  fontSize:12, fontFamily:'monospace', fontWeight:800, cursor: url.trim() ? 'pointer' : 'default',
+                  letterSpacing:'0.06em', boxShadow: url.trim() ? '0 4px 20px rgba(220,20,60,0.4)' : 'none',
+                  transition:'all 0.2s' }}>
+                SUBMIT URL
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 
 function App() {
   const [status, setStatus] = useState('idle')
@@ -20,6 +104,7 @@ function App() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState([])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [urlRequest, setUrlRequest] = useState(null)  // { product, reason, threadId }
 
   useEffect(() => {
     try {
@@ -73,6 +158,7 @@ function App() {
             if (msg.type === 'progress') setProgress(p => [...p, msg.message])
             if (msg.type === 'result') setPendingResult({ data: msg.data, q })
             if (msg.type === 'error') { setError(msg.message); setStatus('error') }
+            if (msg.type === 'url_request') setUrlRequest({ product: msg.product, reason: msg.reason, threadId: msg.thread_id })
           } catch (e) {}
         }
       }
@@ -104,8 +190,25 @@ function App() {
     setProgress([])
   }
 
+  // Close URL modal when pipeline finishes or errors
+  useEffect(() => {
+    if (status !== 'loading') setUrlRequest(null)
+  }, [status])
+
   const showResults = (status === 'done' || status === 'loading') && result
   const showHive = status === 'loading' && !result
+
+  const handleUrlSubmit = async (url) => {
+    const req = urlRequest
+    await fetch('/url_response', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: req.threadId, url: url || '' })
+    })
+    // Close immediately on skip; otherwise keep spinner open —
+    // next url_request SSE will update it, or pipeline finishing will clear it
+    if (!url) setUrlRequest(null)
+  }
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#080808', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }}>
@@ -121,6 +224,7 @@ function App() {
       )}
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {urlRequest && <UrlRequestModal request={urlRequest} onSubmit={handleUrlSubmit} />}
 
       <div style={{ transition: 'margin-left 0.3s ease', marginLeft: historyOpen ? '320px' : '0' }}>
         <AnimatePresence mode="wait">

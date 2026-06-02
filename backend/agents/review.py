@@ -150,7 +150,7 @@ def review_agent_node(state: Blackboard) -> dict:
     print(f"  [Reddit sub-agent]: scanning community posts")
 
     with ThreadPoolExecutor(max_workers=20) as executor:
-        futures = {executor.submit(_review_product, p, product_cache): p for p in products[:2]}
+        futures = {executor.submit(_review_product, p, product_cache): p for p in products[:5]}
         for future in as_completed(futures):
             p = futures[future]
             try:
