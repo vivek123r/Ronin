@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion'
 import { Search, Loader2, ArrowRight, TrendingDown, Star, BarChart2, Brain, Users, Shield } from 'lucide-react'
 import SwarmFX from './SwarmFX'
+import { loadConfig } from './SettingsModal'
 
 /* Spider-Man SVG logo inline */
 function SpiderIcon({ size = 20, color = '#fff' }) {
@@ -756,8 +757,9 @@ function Section({ children, style, className }) {
   )
 }
 
-export default function LandingPage({ onSearch, status, progress, onHistoryToggle }) {
+export default function LandingPage({ onSearch, status, progress, onHistoryToggle, onSettingsOpen }) {
   const [inputValue, setInputValue] = useState('')
+  const [configWarning, setConfigWarning] = useState(false)
   const typingText = useTypingEffect(TYPING_QUERIES)
   const progressRef = useRef(null)
   const isLoading = status === 'loading'
@@ -771,11 +773,25 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
     }
   }, [progress])
 
+  function isConfigured() {
+    const cfg = loadConfig()
+    return !!(cfg.LLM_API_KEY && cfg.RAPIDAPI_KEY)
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
     const trimmed = inputValue.trim()
     if (!trimmed || isLoading) return
+    if (!isConfigured()) { setConfigWarning(true); return }
+    setConfigWarning(false)
     onSearch(trimmed)
+  }
+
+  const handlePill = (pill) => {
+    if (!isConfigured()) { setInputValue(pill); setConfigWarning(true); return }
+    setConfigWarning(false)
+    setInputValue(pill)
+    onSearch(pill)
   }
 
   return (
@@ -894,6 +910,17 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
           >
             [ HISTORY ]
           </button>
+          <button onClick={onSettingsOpen} style={{
+            background:'rgba(220,20,60,0.07)', border:'1px solid rgba(220,20,60,0.25)',
+            color:'#ff6b75', borderRadius:'6px', padding:'6px 14px',
+            fontSize:'0.72rem', fontWeight:700, cursor:'pointer', letterSpacing:'0.08em',
+            fontFamily:'monospace', transition:'all 0.2s',
+          }}
+          onMouseEnter={e=>{ e.currentTarget.style.background='rgba(220,20,60,0.18)'; e.currentTarget.style.borderColor='rgba(220,20,60,0.5)' }}
+          onMouseLeave={e=>{ e.currentTarget.style.background='rgba(220,20,60,0.07)'; e.currentTarget.style.borderColor='rgba(220,20,60,0.25)' }}
+          >
+            [ CONFIG ]
+          </button>
         </div>
       </nav>
 
@@ -988,12 +1015,34 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
                 </div>
               </form>
 
+              {/* Config warning */}
+              <AnimatePresence>
+                {configWarning && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.25 }}
+                    style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(220,20,60,0.1)', border: '1px solid rgba(220,20,60,0.4)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 10 }}
+                  >
+                    <span style={{ fontSize: 16 }}>⚠️</span>
+                    <span style={{ flex: 1, fontSize: '0.78rem', color: '#ff8c94', fontFamily: 'monospace', lineHeight: 1.5 }}>
+                      API keys not configured. You need a <strong>RapidAPI key</strong> and a <strong>LLM API key</strong> to start research.
+                    </span>
+                    <button
+                      onClick={() => { setConfigWarning(false); onSettingsOpen?.() }}
+                      style={{ flexShrink: 0, background: '#e63946', border: 'none', borderRadius: 5, padding: '6px 14px', color: '#fff', fontSize: '0.72rem', fontFamily: 'monospace', fontWeight: 800, cursor: 'pointer', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}
+                    >
+                      ⚙ CONFIGURE
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Quick pills */}
               {!isLoading && (
                 <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.7 }}
                   style={{ display:'flex', flexWrap:'wrap', gap:'6px', marginTop:'12px', justifyContent:'center' }}>
                   {QUICK_PILLS.map(pill => (
-                    <button key={pill} type="button" onClick={()=>{ setInputValue(pill); onSearch(pill) }} style={{
+                    <button key={pill} type="button" onClick={() => handlePill(pill)} style={{
                       background:'rgba(220,20,60,0.06)', border:'1px solid rgba(220,20,60,0.2)',
                       borderRadius:'3px', padding:'5px 12px', color:'rgba(220,20,60,0.7)',
                       fontSize:'0.68rem', cursor:'pointer', transition:'all 0.2s',

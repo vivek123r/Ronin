@@ -60,7 +60,6 @@ def build_graph() -> StateGraph:
 
 def find_best_product(query: str) -> dict:
     app = build_graph()
-    print(app.get_graph().draw_ascii())
 
     initial: Blackboard = {
         "query":                query,

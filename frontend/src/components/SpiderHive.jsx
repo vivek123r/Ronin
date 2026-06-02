@@ -65,6 +65,25 @@ function parseMilestone(msg) {
   if (/Resolving \d+ products/i.test(m)) return { agentId: 'hunter', text: 'Resolving comparison products...' }
   if (/products resolved/i.test(m)) return { agentId: 'hunter', text: 'Products locked in for comparison' }
 
+  // ── Reviewer sub-agents ──────────────────────────────────────────────────
+  if (/\[Amazon sub-agent\]/i.test(m)) {
+    const n = m.match(/(\d+) reviews/)
+    return { agentId: 'rev_amazon', text: `Amazon: ${n?.[1] || '?'} reviews fetched` }
+  }
+  if (/\[YouTube sub-agent\].*skipped/i.test(m)) return { agentId: 'rev_youtube', text: 'YouTube: skipped (no key)' }
+  if (/\[YouTube sub-agent\]/i.test(m)) {
+    const n = m.match(/(\d+) videos/)
+    return { agentId: 'rev_youtube', text: `YouTube: ${n?.[1] || '?'} videos fetched` }
+  }
+  if (/\[Reddit\] sub-agent/i.test(m)) {
+    const n = m.match(/(\d+) posts/)
+    return { agentId: 'rev_reddit', text: `Reddit: ${n?.[1] || '?'} posts found` }
+  }
+  if (/sources available/i.test(m)) {
+    const n = m.match(/(\d+)\/3/)
+    return { agentId: 'reviewer', text: `${n?.[1] || '?'}/3 sources — scoring...` }
+  }
+
   // ── Reviewer ────────────────────────────────────────────────────────────
   if (/Reviewing:/i.test(m)) {
     const prod = m.replace(/.*Reviewing:\s*/i, '').trim().split(' ').slice(0, 4).join(' ')
@@ -74,6 +93,7 @@ function parseMilestone(msg) {
     const n = m.match(/Rating:\s*(\d+)/)
     return { agentId: 'reviewer', text: `Intelligence scored: ${n?.[1]}/100` }
   }
+  if (/sending intelligence to master/i.test(m)) return { agentId: 'reviewer', text: 'Transmitting intelligence to RONIN CORE...' }
   if (/\[Review\].*products/i.test(m)) {
     const n = m.match(/(\d+) products/)
     return { agentId: 'reviewer', text: `Review complete: ${n?.[1] || ''} products analyzed` }
@@ -108,10 +128,19 @@ function parseMilestone(msg) {
 /* ─── Agent definitions ─────────────────────────────────────────────────── */
 const SUB_AGENTS = [
   { id: 'hunter',   label: 'HUNTER',   color: '#ff7a3d', angle: -Math.PI/2,   sourceIdxs: [0, 4] },
-  { id: 'reviewer', label: 'REVIEWER', color: '#e63946', angle: 0,            sourceIdxs: [1, 2] },
+  { id: 'reviewer', label: 'REVIEWER', color: '#e63946', angle: 0,            sourceIdxs: [1, 2, 8] },
   { id: 'pricer',   label: 'PRICER',   color: '#ff3366', angle: Math.PI/2,    sourceIdxs: [3, 5] },
   { id: 'ranker',   label: 'RANKER',   color: '#9b1aff', angle: Math.PI,      sourceIdxs: [6, 7] },
 ]
+// Maps reviewer source nodes to sub-agent IDs for wave firing
+// node indices in nodes[]: REDDIT=6, YOUTUBE=7, AMZ_REVIEW=13 (after filler shift)
+// We'll store this as a runtime lookup after buildLayout
+const REVIEWER_SOURCE_WAVE_MAP = [
+  { sourceLabel: 'REDDIT',     subId: 'rev_reddit',  color: '#ff4500' },
+  { sourceLabel: 'YOUTUBE',    subId: 'rev_youtube', color: '#ff4444' },
+  { sourceLabel: 'AMZ-REVIEW', subId: 'rev_amazon',  color: '#ff9900' },
+]
+
 const SOURCE_LABELS = ['AMAZON','REDDIT','YOUTUBE','GOOGLE','FLIPKART','BLOGS','FORUMS','TECHRADAR']
 const PHASE_LABELS = ['INITIALIZING','HUNTING PRODUCTS','DEEP ANALYSIS','CROSS-VALIDATION','SYNTHESIS']
 const AGENT_RING_R = 160
@@ -121,11 +150,14 @@ const SOURCE_RING_R = 310
 function useHiveState(progress) {
   const [milestones, setMilestones] = useState([])
   const [agents, setAgents] = useState(() => ({
-    queen:    { status: 'idle', progress: 0, source: '' },
-    hunter:   { status: 'idle', progress: 0, source: '' },
-    reviewer: { status: 'idle', progress: 0, source: '', ratingCount: 0 },
-    pricer:   { status: 'idle', progress: 0, source: '' },
-    ranker:   { status: 'idle', progress: 0, source: '', _pending: false },
+    queen:       { status: 'idle', progress: 0, source: '' },
+    hunter:      { status: 'idle', progress: 0, source: '' },
+    reviewer:    { status: 'idle', progress: 0, source: '', ratingCount: 0 },
+    pricer:      { status: 'idle', progress: 0, source: '' },
+    ranker:      { status: 'idle', progress: 0, source: '', _pending: false },
+    rev_amazon:  { status: 'idle', progress: 0 },
+    rev_youtube: { status: 'idle', progress: 0 },
+    rev_reddit:  { status: 'idle', progress: 0 },
   }))
 
   const processedCount = useRef(0)
@@ -163,6 +195,28 @@ function useHiveState(progress) {
         }
         if (/Locked in \d+|products.*comparison/i.test(milestone.text)) {
           next.hunter = { ...next.hunter, status: 'done', progress: 100 }
+        }
+
+        // Reviewer sub-agent states
+        if (aid === 'rev_amazon') {
+          if (/fetched/i.test(milestone.text))
+            next.rev_amazon = { status: 'done', progress: 100 }
+          else
+            next.rev_amazon = { status: 'scanning', progress: 50 }
+        }
+        if (aid === 'rev_youtube') {
+          if (/skipped/i.test(milestone.text))
+            next.rev_youtube = { status: 'idle', progress: 0 }
+          else if (/fetched/i.test(milestone.text))
+            next.rev_youtube = { status: 'done', progress: 100 }
+          else
+            next.rev_youtube = { status: 'scanning', progress: 50 }
+        }
+        if (aid === 'rev_reddit') {
+          if (/found/i.test(milestone.text))
+            next.rev_reddit = { status: 'done', progress: 100 }
+          else
+            next.rev_reddit = { status: 'scanning', progress: 50 }
         }
 
         // Reviewer + Pricer start together
@@ -295,7 +349,7 @@ function AgentCard({ def, state, isQueen = false }) {
 }
 
 /* ─── MilestoneFeed ─────────────────────────────────────────────────────── */
-const AGENT_COLORS = { queen: '#ffd700', hunter: '#ff7a3d', reviewer: '#e63946', pricer: '#ff3366', ranker: '#9b1aff' }
+const AGENT_COLORS = { queen: '#ffd700', hunter: '#ff7a3d', reviewer: '#e63946', pricer: '#ff3366', ranker: '#9b1aff', rev_amazon: '#ff9900', rev_youtube: '#ff4444', rev_reddit: '#ff4500' }
 
 function MilestoneFeed({ milestones }) {
   return (
@@ -374,6 +428,7 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
   const completedRef = useRef(false)
   const resultReadyRef = useRef(false)
   const onCompleteRef = useRef(onComplete)
+  const prevSubStatusRef = useRef({})
   useEffect(() => { resultReadyRef.current = resultReady }, [resultReady])
   useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
 
@@ -388,6 +443,23 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
       sp.reactStatus = ag.status
       sp.reactProgress = ag.progress
     })
+    // Track reviewer status for dot spawning
+    prevSubStatusRef.current['reviewer'] = agents.reviewer?.status || 'idle'
+
+    // Track which sub-sources are active for continuous waves (driven from draw loop)
+    if (s) {
+      const reviewerDone = agents.reviewer?.status === 'done'
+      s.activeSubSources = reviewerDone ? [] : REVIEWER_SOURCE_WAVE_MAP
+        .filter(({ subId }) => agents[subId]?.status === 'scanning' || agents[subId]?.status === 'done')
+        .map(({ sourceLabel, color }) => {
+          const srcNode = s.nodes?.find(n => n.type === 'source' && n.label === sourceLabel)
+          const rn = s.nodes?.[2]
+          return srcNode && rn ? { fromX: srcNode.x, fromY: srcNode.y, toX: rn.x, toY: rn.y, color } : null
+        })
+        .filter(Boolean)
+      // Clear waves when reviewer finishes
+      if (reviewerDone) s.subWaves = []
+    }
     s.queenStatus = agents.queen.status
     s.phase = phase
   }, [agents, phase])
@@ -424,17 +496,19 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
       // sourceIdxs: hunter=[0,4], reviewer=[1,2], pricer=[3,5], ranker=[6,7]
       const SOURCE_NODE_DEFS = [
         // hunter sources: AMAZON(0) and FLIPKART(4) — spread horizontally at top
-        { label: 'AMAZON',   agentIdx: 0, spread: -0.55 },  // idx 5  (sourceIdx 0)
-        // reviewer sources: REDDIT(1), YOUTUBE(2)
-        { label: 'REDDIT',   agentIdx: 1, spread: -0.45 },  // idx 6  (sourceIdx 1)
-        { label: 'YOUTUBE',  agentIdx: 1, spread:  0.45 },  // idx 7  (sourceIdx 2)
+        { label: 'AMAZON',      agentIdx: 0, spread: -0.55 },  // idx 5  (sourceIdx 0)
+        // reviewer sources: REDDIT(1), YOUTUBE(2), AMZ-REVIEW(8)
+        { label: 'REDDIT',      agentIdx: 1, spread: -0.65 },  // idx 6  (sourceIdx 1)
+        { label: 'YOUTUBE',     agentIdx: 1, spread:  0.65 },  // idx 7  (sourceIdx 2)
         // pricer sources: GOOGLE(3), BLOGS(5)
-        { label: 'GOOGLE',   agentIdx: 2, spread: -0.45 },  // idx 8  (sourceIdx 3)
-        { label: 'FLIPKART', agentIdx: 0, spread:  0.55 },  // idx 9  (sourceIdx 4)
-        { label: 'BLOGS',    agentIdx: 2, spread:  0.45 },  // idx 10 (sourceIdx 5)
+        { label: 'GOOGLE',      agentIdx: 2, spread: -0.45 },  // idx 8  (sourceIdx 3)
+        { label: 'FLIPKART',    agentIdx: 0, spread:  0.55 },  // idx 9  (sourceIdx 4)
+        { label: 'BLOGS',       agentIdx: 2, spread:  0.45 },  // idx 10 (sourceIdx 5)
         // ranker sources: FORUMS(6), TECHRADAR(7)
-        { label: 'FORUMS',   agentIdx: 3, spread: -0.45 },  // idx 11 (sourceIdx 6)
-        { label: 'TECHRADAR',agentIdx: 3, spread:  0.45 },  // idx 12 (sourceIdx 7)
+        { label: 'FORUMS',      agentIdx: 3, spread: -0.45 },  // idx 11 (sourceIdx 6)
+        { label: 'TECHRADAR',   agentIdx: 3, spread:  0.45 },  // idx 12 (sourceIdx 7)
+        // reviewer 3rd source: AMZ-REVIEW (8)
+        { label: 'AMZ-REVIEW',  agentIdx: 1, spread:  0.0  },  // idx 13 (sourceIdx 8) — center, farthest
       ]
       SOURCE_NODE_DEFS.forEach(({ label, agentIdx, spread }) => {
         const agentAngle = SUB_AGENTS[agentIdx].angle
@@ -468,8 +542,8 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
         def.sourceIdxs.forEach(si => edges.push({ a: i + 1, b: si + 5, type: 'agent', agentIdx: i }))
       })
       // Atmospheric: sources ↔ nearby fillers
-      for (let i = 5; i <= 12; i++) {
-        for (let j = 13; j < nodes.length; j++) {
+      for (let i = 5; i <= 13; i++) {
+        for (let j = 14; j < nodes.length; j++) {
           const d = Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y)
           if (d < 160) edges.push({ a: i, b: j, type: 'atmo' })
         }
@@ -502,16 +576,23 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
         stateRef.current.nodes = nodes
         stateRef.current.edges = edges
         stateRef.current.spiders = spiders
+        if (!stateRef.current.subWaves) stateRef.current.subWaves = []
       }
     }
 
     const s = {
       nodes, edges: [], spiders,
+      subWaves: [],
+      activeSubSources: [],  // sources currently beaming to reviewer
+      waveSpawnTimer: {},    // per-source spawn timer
+      dotSpawnTimer: 0,      // reviewer→queen dot timer
+      reviewerDots: [],
       phase: 0, queenStatus: 'idle',
       queenFlash: 0, queenBloom: 0,
       bloomRadius: 14, blooming: false,
       particles: [],
       queenBodySpike: 0,
+      reviewerFrozen: 0,  // countdown frames reviewer is frozen receiving a wave
       time: 0,
     }
     stateRef.current = s
@@ -699,6 +780,21 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
               }, 800)
             }
           }
+        } else if (sp.def.id === 'reviewer') {
+          // Reviewer stays at its anchor — sub-agents send data via waves.
+          // Orbit tightly at anchor while scanning; waves knock it briefly.
+          const frozen = s.reviewerFrozen > 0
+          if (frozen) {
+            // Receiving wave — shake slightly
+            sp.x = an.x + (Math.random() - 0.5) * 3
+            sp.y = an.y + (Math.random() - 0.5) * 3
+            s.reviewerFrozen = Math.max(0, s.reviewerFrozen - 1)
+          } else {
+            // Gentle breathing orbit at anchor
+            sp.orbitAngle += 0.006 * (dt / 16)
+            sp.x = an.x + Math.cos(sp.orbitAngle) * 6
+            sp.y = an.y + Math.sin(sp.orbitAngle) * 6
+          }
         } else {
           // Travel to source → back → repeat
           if (sp.t >= 1) {
@@ -784,6 +880,96 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
         ctx.fillStyle = isDone ? 'rgba(74,222,128,1.0)' : 'rgba(255,100,110,1.0)'
         ctx.fillText(sp.def.label, sp.x, sp.y + 26)
       })
+
+      // ── Continuous kamehameha waves from source nodes → REVIEWER ─────────
+      // Spawn new wave per active source every ~50 frames
+      if (s.activeSubSources?.length) {
+        s.activeSubSources.forEach(src => {
+          const key = `${src.fromX},${src.fromY}`
+          s.waveSpawnTimer[key] = (s.waveSpawnTimer[key] || 0) + dt
+          if (s.waveSpawnTimer[key] > 800) {  // new wave every ~800ms
+            s.waveSpawnTimer[key] = 0
+            s.subWaves.push({ ...src, t: 0, arrived: false })
+          }
+        })
+      } else {
+        s.waveSpawnTimer = {}
+      }
+
+      s.subWaves = s.subWaves.filter(w => w.t <= 1.05)
+      s.subWaves.forEach(w => {
+        w.t += 0.016 * (dt / 16)
+        const ease = w.t < 0.5 ? 2*w.t*w.t : -1+(4-2*w.t)*w.t
+        const ex = Math.min(ease, 1)
+        const px = w.fromX + (w.toX - w.fromX) * ex
+        const py = w.fromY + (w.toY - w.fromY) * ex
+
+        // Continuous beam: draw full persistent line from source to leading orb
+        const totalLen = Math.hypot(w.toX - w.fromX, w.toY - w.fromY)
+        const steps = 24
+        for (let k = steps; k >= 0; k--) {
+          const kt = Math.max(0, ex - k * 0.035)
+          const kx = w.fromX + (w.toX - w.fromX) * kt
+          const ky = w.fromY + (w.toY - w.fromY) * kt
+          const frac = 1 - k / steps
+          const beamAlpha = frac * 0.85
+          const beamW = frac * 5 + 0.5
+          ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(px, py)
+          ctx.strokeStyle = `rgba(255,210,50,${beamAlpha})`
+          ctx.lineWidth = beamW; ctx.stroke()
+        }
+
+        // Leading orb
+        const orbAlpha = Math.max(0, 1 - w.t * 0.2)
+        const og = ctx.createRadialGradient(px, py, 0, px, py, 13)
+        og.addColorStop(0, `rgba(255,255,200,${orbAlpha})`)
+        og.addColorStop(0.4, `rgba(255,200,40,${orbAlpha * 0.8})`)
+        og.addColorStop(1, 'rgba(220,80,0,0)')
+        ctx.beginPath(); ctx.arc(px, py, 13, 0, Math.PI * 2)
+        ctx.fillStyle = og; ctx.fill()
+        ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(255,255,255,${orbAlpha})`; ctx.fill()
+
+        // Impact
+        if (!w.arrived && w.t > 0.9) {
+          w.arrived = true
+          s.reviewerFrozen = 40
+          const rn = s.nodes[2]
+          if (rn) {
+            for (let p = 0; p < 8; p++) {
+              const ang = (p / 8) * Math.PI * 2
+              s.particles.push({ x: rn.x, y: rn.y, vx: Math.cos(ang)*2.5, vy: Math.sin(ang)*2.5, life: 0.7, color: w.color })
+            }
+          }
+        }
+      })
+
+      // ── Reviewer → queen signal dots (every ~1s while scanning or done) ──
+      {
+        const reviewerSp = s.spiders[1]  // reviewer is index 1
+        const reviewerActive = reviewerSp && (reviewerSp.reactStatus === 'scanning' || reviewerSp.reactStatus === 'done')
+        if (reviewerActive) {
+          s.dotSpawnTimer = (s.dotSpawnTimer || 0) + dt
+          if (s.dotSpawnTimer > 1000) {
+            s.dotSpawnTimer = 0
+            const rn = s.nodes[2]
+            const qn = s.nodes[0]
+            if (rn && qn) s.reviewerDots.push({ fromX: rn.x, fromY: rn.y, toX: qn.x, toY: qn.y, t: 0 })
+          }
+        }
+        s.reviewerDots = s.reviewerDots.filter(d => d.t < 1.2)
+        s.reviewerDots.forEach(d => {
+          d.t += 0.012 * (dt / 16)
+          const t = Math.min(d.t, 1)
+          const px = d.fromX + (d.toX - d.fromX) * t
+          const py = d.fromY + (d.toY - d.fromY) * t
+          const alpha = t < 0.1 ? t / 0.1 : t > 0.85 ? (1 - t) / 0.15 : 1.0
+          ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(220,20,60,${alpha * 0.9})`; ctx.fill()
+          ctx.beginPath(); ctx.arc(px - (d.toX - d.fromX) * 0.05, py - (d.toY - d.fromY) * 0.05, 1.5, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(255,100,110,${alpha * 0.4})`; ctx.fill()
+        })
+      }
 
       // ── Particles ─────────────────────────────────────────────────────
       s.particles = s.particles.filter(p => {
@@ -900,7 +1086,34 @@ export default function SpiderHive({ progress, query, resultReady, onComplete })
 
         {/* Sub-agent cards */}
         {SUB_AGENTS.map(def => (
-          <AgentCard key={def.id} def={def} state={agents[def.id]} />
+          <div key={def.id}>
+            <AgentCard def={def} state={agents[def.id]} />
+            {/* Reviewer sub-agent indicators */}
+            {def.id === 'reviewer' && (
+              <div style={{ display: 'flex', gap: 4, paddingLeft: 8, marginTop: 4 }}>
+                {REVIEWER_SOURCE_WAVE_MAP.map(sub => {
+                  const st = agents[sub.subId]
+                  const isDone = st?.status === 'done'
+                  const isActive = st?.status === 'scanning'
+                  return (
+                    <div key={sub.subId} style={{
+                      flex: 1, padding: '4px 6px', borderRadius: 5,
+                      background: isDone ? 'rgba(74,222,128,0.08)' : isActive ? 'rgba(220,20,60,0.08)' : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${isDone ? 'rgba(74,222,128,0.3)' : isActive ? `${sub.color}44` : 'rgba(255,255,255,0.06)'}`,
+                      textAlign: 'center',
+                    }}>
+                      <div style={{ fontSize: 8, fontFamily: 'monospace', fontWeight: 700, color: isDone ? '#4ade80' : isActive ? sub.color : '#334155', letterSpacing: '0.05em' }}>
+                        {sub.sourceLabel}
+                      </div>
+                      <div style={{ fontSize: 7, fontFamily: 'monospace', color: isDone ? '#4ade80' : isActive ? 'rgba(220,20,60,0.7)' : '#1e293b', marginTop: 1 }}>
+                        {isDone ? '✓' : isActive ? '●' : '○'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         ))}
       </motion.div>
 

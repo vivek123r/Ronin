@@ -5,8 +5,10 @@ import SpiderHive from './components/SpiderHive'
 import ResultsPanel from './components/ResultsPanel'
 import HistorySidebar from './components/HistorySidebar'
 import SpiderFX from './components/SpiderFX'
+import SettingsModal, { loadConfig } from './components/SettingsModal'
 
 const HISTORY_KEY = 'ronin_history'
+
 
 function App() {
   const [status, setStatus] = useState('idle')
@@ -17,6 +19,7 @@ function App() {
   const [error, setError] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState([])
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     try {
@@ -41,11 +44,13 @@ function App() {
     setResult(null)
     setError(null)
 
+    const userConfig = loadConfig()
+
     try {
       const response = await fetch('/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q })
+        body: JSON.stringify({ query: q, config: userConfig })
       })
 
       if (!response.ok) throw new Error(`HTTP error ${response.status}`)
@@ -66,19 +71,12 @@ function App() {
           try {
             const msg = JSON.parse(chunk.slice(6))
             if (msg.type === 'progress') setProgress(p => [...p, msg.message])
-            if (msg.type === 'result') {
-              setPendingResult({ data: msg.data, q })
-              // result held — SpiderHive will call onComplete when ranker arrives at queen
-            }
-            if (msg.type === 'error') {
-              setError(msg.message)
-              setStatus('error')
-            }
+            if (msg.type === 'result') setPendingResult({ data: msg.data, q })
+            if (msg.type === 'error') { setError(msg.message); setStatus('error') }
           } catch (e) {}
         }
       }
 
-      // only flip to error if we never received a result
       setPendingResult(prev => {
         if (!prev) setStatus(s => s === 'loading' ? 'error' : s)
         return prev
@@ -108,11 +106,11 @@ function App() {
 
   const showResults = (status === 'done' || status === 'loading') && result
   const showHive = status === 'loading' && !result
-  const showLanding = !showResults && !showHive
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#080808', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }}>
       <SpiderFX />
+
       {!showHive && (
         <HistorySidebar
           isOpen={historyOpen}
@@ -121,6 +119,8 @@ function App() {
           history={history}
         />
       )}
+
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div style={{ transition: 'margin-left 0.3s ease', marginLeft: historyOpen ? '320px' : '0' }}>
         <AnimatePresence mode="wait">
@@ -132,31 +132,14 @@ function App() {
               exit={{ opacity: 0, y: -20 }}
               style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px' }}
             >
-              <div style={{
-                background: 'rgba(239,68,68,0.08)',
-                border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: '16px',
-                padding: '32px 40px',
-                textAlign: 'center',
-                maxWidth: '480px',
-              }}>
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '16px', padding: '32px 40px', textAlign: 'center', maxWidth: '480px' }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
                 <p style={{ color: '#f87171', fontSize: '18px', marginBottom: '8px', fontWeight: 700 }}>Something went wrong</p>
                 <p style={{ color: '#94a3b8', fontSize: '14px', lineHeight: 1.6 }}>{error}</p>
               </div>
               <button
                 onClick={handleNewSearch}
-                style={{
-                  background: 'linear-gradient(135deg, #e63946, #e63946)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '12px 28px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  boxShadow: '0 4px 20px rgba(220,20,60,0.4)',
-                }}
+                style={{ background: 'linear-gradient(135deg,#e63946,#e63946)', color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 28px', fontWeight: 700, cursor: 'pointer', fontSize: '14px', boxShadow: '0 4px 20px rgba(220,20,60,0.4)' }}
               >
                 Try Again
               </button>
@@ -187,6 +170,7 @@ function App() {
                 query={query}
                 onNewSearch={handleNewSearch}
                 onSearch={handleSearch}
+                onSettingsOpen={() => setSettingsOpen(true)}
               />
             </motion.div>
           ) : (
@@ -202,6 +186,7 @@ function App() {
                 onSearch={handleSearch}
                 progress={progress}
                 onHistoryToggle={() => setHistoryOpen(o => !o)}
+                onSettingsOpen={() => setSettingsOpen(true)}
               />
             </motion.div>
           )}

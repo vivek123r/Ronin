@@ -1,19 +1,14 @@
-import os
 from tavily import TavilyClient
 from backend.utils.llm import llm
 from backend.utils.json_helpers import extract_json
+from backend.utils.request_config import get
 from langchain_core.messages import HumanMessage, SystemMessage
-from dotenv import load_dotenv
-
-load_dotenv()
-
-_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 
 def search_tavily(query: str, max_results: int = 15) -> list:
     """Search the web via Tavily and extract product name candidates using LLM."""
     try:
-        results = _client.search(
+        results = TavilyClient(api_key=get("TAVILY_API_KEY")).search(
             query=f"{query} best India",
             max_results=max_results,
             include_answer=True,

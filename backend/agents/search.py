@@ -92,25 +92,26 @@ def search_agent_node(state: Blackboard) -> dict:
             "notes":          ["[Search] No products found — check API keys"],
         }
 
-    # Step 2: LLM picks 5 from top Amazon candidates
+    # Step 2: LLM picks 2 from top Amazon candidates
+    MAX_PRODUCTS = 2
     top_candidates = sorted(amazon_candidates, key=lambda c: float(c.get("rating") or 0), reverse=True)[:15]
 
     response = llm.invoke([
         SystemMessage(content=(
             "You are a product selection assistant. "
-            "Pick the 5 most relevant, distinct products (no duplicates/variants) matching the query. "
+            f"Pick the {MAX_PRODUCTS} most relevant, distinct products (no duplicates/variants) matching the query. "
             "Return ONLY raw JSON — no markdown, no backticks:\n"
             '{"products": ["Exact Product Title 1", ...]}'
         )),
         HumanMessage(content=(
             f"Query: {query}\n\n"
             f"Amazon candidates:\n{json.dumps(top_candidates, indent=2)}\n\n"
-            "Return the 5 best as a JSON list of their exact Amazon titles."
+            f"Return the {MAX_PRODUCTS} best as a JSON list of their exact Amazon titles."
         )),
     ])
 
     parsed    = extract_json(response.content)
-    llm_picks = parsed.get("products", [c["title"] for c in top_candidates[:5]])
+    llm_picks = parsed.get("products", [c["title"] for c in top_candidates[:MAX_PRODUCTS]])
 
     amazon_titles = [c["title"] for c in amazon_candidates]
     products = [_best_match(p, amazon_titles) for p in llm_picks]

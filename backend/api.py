@@ -20,6 +20,7 @@ from backend.agents import search as _search_module
 _search_module.API_MODE = True
 
 import backend.pipeline as _pipeline
+from backend.utils import request_config as _rc
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -95,8 +96,9 @@ class SSECapture(io.StringIO):
 # ── /search SSE endpoint ──────────────────────────────────────────────────────
 @app.post("/search")
 async def search(request: Request):
-    body  = await request.json()
-    query = body.get("query", "").strip()
+    body   = await request.json()
+    query  = body.get("query", "").strip()
+    config = body.get("config", {})   # user-supplied API keys / LLM config
     if not query:
         return JSONResponse({"error": "query is required"}, status_code=400)
 
@@ -109,6 +111,7 @@ async def search(request: Request):
         error_container:  Dict[str, Any] = {}
 
         def _run():
+            _rc.set_config(config)   # inject per-request keys
             old_stdout = sys.stdout
             sys.stdout = capture
             try:
@@ -118,6 +121,7 @@ async def search(request: Request):
                 error_container["error"] = str(exc)
             finally:
                 sys.stdout = old_stdout
+                _rc.clear_config()
                 asyncio.run_coroutine_threadsafe(queue.put(None), loop)
 
         executor.submit(_run)
@@ -149,6 +153,20 @@ async def search(request: Request):
             "Connection":       "keep-alive",
         },
     )
+
+
+# ── /providers endpoint ───────────────────────────────────────────────────────
+@app.get("/providers")
+async def get_providers():
+    return JSONResponse([
+        { "id": "openrouter", "label": "OpenRouter",   "url": "https://openrouter.ai/keys",           "keyLabel": "API Key",        "defaultModel": "deepseek/deepseek-v4-flash",          "modelPlaceholder": "e.g. deepseek/deepseek-v4-flash" },
+        { "id": "openai",     "label": "OpenAI",       "url": "https://platform.openai.com/api-keys",  "keyLabel": "API Key",        "defaultModel": "gpt-4o-mini",                        "modelPlaceholder": "e.g. gpt-4o-mini" },
+        { "id": "anthropic",  "label": "Anthropic",    "url": "https://console.anthropic.com/keys",    "keyLabel": "API Key",        "defaultModel": "claude-haiku-4-5-20251001",          "modelPlaceholder": "e.g. claude-haiku-4-5-20251001" },
+        { "id": "groq",       "label": "Groq",         "url": "https://console.groq.com/keys",         "keyLabel": "API Key",        "defaultModel": "llama-3.3-70b-versatile",            "modelPlaceholder": "e.g. llama-3.3-70b-versatile" },
+        { "id": "together",   "label": "Together AI",  "url": "https://api.together.xyz/settings/api-keys", "keyLabel": "API Key", "defaultModel": "meta-llama/Llama-3.3-70B-Instruct-Turbo", "modelPlaceholder": "e.g. meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+        { "id": "mistral",    "label": "Mistral",      "url": "https://console.mistral.ai/api-keys",   "keyLabel": "API Key",        "defaultModel": "mistral-small-latest",               "modelPlaceholder": "e.g. mistral-small-latest" },
+        { "id": "ollama",     "label": "Ollama (local)","url": "https://ollama.com",                   "keyLabel": "Model name",     "defaultModel": "llama3.2",                           "modelPlaceholder": "e.g. llama3.2" },
+    ])
 
 
 # ── /history endpoint ─────────────────────────────────────────────────────────

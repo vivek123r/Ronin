@@ -1,14 +1,14 @@
-import os
 import re
 import requests
 from backend.utils.json_helpers import extract_json, extract_price_value
 from backend.utils.llm import llm
+from backend.utils.request_config import get
 from langchain_core.messages import HumanMessage, SystemMessage
 
 
 def _headers() -> dict:
     return {
-        "x-rapidapi-key":  os.getenv("RAPIDAPI_KEY"),
+        "x-rapidapi-key":  get("RAPIDAPI_KEY"),
         "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com",
     }
 

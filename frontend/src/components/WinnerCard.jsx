@@ -82,7 +82,7 @@ export default function WinnerCard({ winner, weights, productCache }) {
 
   useEffect(() => {
     if (!winner?.confidence) return
-    const target = winner.confidence
+    const target = winner.confidence <= 1 ? winner.confidence * 100 : winner.confidence
     const steps = 60, interval = 1500 / steps
     let count = 0
     const timer = setInterval(() => {

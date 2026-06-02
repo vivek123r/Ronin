@@ -1,5 +1,5 @@
-import os
 import requests
+from backend.utils.request_config import get
 
 
 def search_youtube(query: str, max_results: int = 2) -> list:
@@ -16,7 +16,7 @@ def search_youtube(query: str, max_results: int = 2) -> list:
                 "maxResults":        max_results,
                 "relevanceLanguage": "en",
                 "regionCode":        "IN",
-                "key":               os.getenv("YOUTUBE_API_KEY"),
+                "key":               get("YOUTUBE_API_KEY"),
             },
             timeout=8,
         )

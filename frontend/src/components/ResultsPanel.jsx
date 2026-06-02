@@ -15,7 +15,7 @@ import RankedTable from './RankedTable';
 import RadarChart from './RadarChart';
 import AgentReports from './AgentReports';
 
-export default function ResultsPanel({ result, isLoading, progress, query, onNewSearch, onSearch }) {
+export default function ResultsPanel({ result, isLoading, progress, query, onNewSearch, onSearch, onSettingsOpen }) {
   const [searchVal, setSearchVal] = useState(query || '')
   const inputRef = useRef(null)
 
@@ -111,12 +111,25 @@ export default function ResultsPanel({ result, isLoading, progress, query, onNew
             </div>
           </form>
 
-          {/* Ronin logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'radial-gradient(circle, #e63946, #8b0000)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(220,20,60,0.5)' }}>
-              <SpiderIcon size={14} color="#fff" />
+          {/* Ronin logo + config */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'radial-gradient(circle, #e63946, #8b0000)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(220,20,60,0.5)' }}>
+                <SpiderIcon size={14} color="#fff" />
+              </div>
+              <span style={{ fontWeight: 900, fontSize: '0.85rem', letterSpacing: '0.12em', color: '#fff', fontFamily: 'Space Grotesk, sans-serif' }}>RONIN</span>
             </div>
-            <span style={{ fontWeight: 900, fontSize: '0.85rem', letterSpacing: '0.12em', color: '#fff', fontFamily: 'Space Grotesk, sans-serif' }}>RONIN</span>
+            <button onClick={onSettingsOpen} style={{
+              background: 'rgba(220,20,60,0.07)', border: '1px solid rgba(220,20,60,0.25)',
+              color: '#ff6b75', borderRadius: '6px', padding: '5px 12px',
+              fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.08em',
+              fontFamily: 'monospace', transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,20,60,0.18)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,20,60,0.07)' }}
+            >
+              [ CONFIG ]
+            </button>
           </div>
         </div>
       </div>
