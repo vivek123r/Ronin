@@ -1047,7 +1047,7 @@ function HiveCanvas({ agents, phase, resultReady, onComplete }) {
         } else if (bloomT > 0.3) {
           ctx.font = `bold ${Math.round(14 + bloomT * 10)}px monospace`; ctx.textAlign = 'center'
           ctx.fillStyle = `rgba(255,220,220,${bloomT})`
-          ctx.fillText('INTELLIGENCE SYNTHESIZED', qn.x, qn.y + baseR + 28)
+          ctx.fillText('', qn.x, qn.y + baseR + 28)
         }
       }
     }

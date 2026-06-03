@@ -67,7 +67,8 @@ export default function SettingsModal({ isOpen, onClose }) {
   const selectedProvider = PROVIDERS.find(p => p.id === (cfg.LLM_PROVIDER || 'openrouter')) || PROVIDERS[0]
 
   const handleSave = () => {
-    saveConfig(cfg)
+    const trimmed = Object.fromEntries(Object.entries(cfg).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
+    saveConfig(trimmed)
     setSaved(true)
     setTimeout(() => { setSaved(false); onClose() }, 800)
   }

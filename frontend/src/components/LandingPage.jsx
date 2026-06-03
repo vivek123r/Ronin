@@ -16,8 +16,6 @@ function SpiderIcon({ size = 20, color = '#fff' }) {
 const QUICK_PILLS = [
   'Best earphone under 3000',
   'Gaming laptop under 60000',
-  'Compare iPhone 16 vs Samsung S25',
-  'Best mechanical keyboard under 5000',
 ]
 
 const TYPING_QUERIES = [
@@ -759,7 +757,10 @@ function Section({ children, style, className }) {
 
 export default function LandingPage({ onSearch, status, progress, onHistoryToggle, onSettingsOpen }) {
   const [inputValue, setInputValue] = useState('')
+  const [compareUrls, setCompareUrls] = useState(['', ''])
+  const [searchMode, setSearchMode] = useState('research') // 'find' | 'compare' | 'research'
   const [configWarning, setConfigWarning] = useState(false)
+  const [urlError, setUrlError] = useState('')
   const typingText = useTypingEffect(TYPING_QUERIES)
   const progressRef = useRef(null)
   const isLoading = status === 'loading'
@@ -775,21 +776,52 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
 
   function isConfigured() {
     const cfg = loadConfig()
-    return !!(cfg.LLM_API_KEY && cfg.RAPIDAPI_KEY)
+    return !!(cfg.LLM_API_KEY?.trim() && cfg.RAPIDAPI_KEY?.trim())
+  }
+
+  function missingKeys() {
+    const cfg = loadConfig()
+    const missing = []
+    if (!cfg.LLM_API_KEY?.trim()) missing.push('LLM API key')
+    if (!cfg.RAPIDAPI_KEY?.trim()) missing.push('RapidAPI key')
+    return missing
+  }
+
+  function extractAsin(url) {
+    const m = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/)
+    return m ? m[1] : null
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    const trimmed = inputValue.trim()
-    if (!trimmed || isLoading) return
-    if (!isConfigured()) { setConfigWarning(true); return }
+    if (isLoading) return
+    if (!isConfigured()) { setConfigWarning(true); setUrlError(''); return }
     setConfigWarning(false)
-    onSearch(trimmed)
+
+    if (searchMode === 'find') {
+      const asin = extractAsin(inputValue.trim())
+      if (!asin) { setUrlError('Paste a valid Amazon product URL (must contain /dp/ASIN)'); return }
+      setUrlError('')
+      onSearch(`FIND:${asin}`)
+    } else if (searchMode === 'compare') {
+      const results = compareUrls.map((u, i) => ({ i, asin: extractAsin(u.trim()), url: u.trim() }))
+      const invalid = results.filter(r => r.url && !r.asin)
+      const valid = results.filter(r => r.asin)
+      if (invalid.length) { setUrlError(`URL ${invalid.map(r=>r.i+1).join(', ')}: not a product URL — open the product page and copy the URL (must contain /dp/)`); return }
+      if (valid.length < 2) { setUrlError('Add at least 2 Amazon product URLs to compare'); return }
+      setUrlError('')
+      onSearch(`COMPARE:${valid.map(r=>r.asin).join(',')}`)
+    } else {
+      const trimmed = inputValue.trim()
+      if (!trimmed) return
+      onSearch(trimmed)
+    }
   }
 
   const handlePill = (pill) => {
     if (!isConfigured()) { setInputValue(pill); setConfigWarning(true); return }
     setConfigWarning(false)
+    setSearchMode('research')
     setInputValue(pill)
     onSearch(pill)
   }
@@ -964,8 +996,8 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
               <span style={{ display:'block', fontSize:'clamp(0.7rem,1.5vw,1rem)', letterSpacing:'0.35em', color:'rgba(220,20,60,0.6)', fontWeight:700, marginBottom:'12px', fontFamily:'monospace' }}>
                 [ WEB INTEL SYSTEM v2.4 ]
               </span>
-              <span style={{ display:'block', fontSize:'clamp(2.8rem,7vw,5.8rem)', color:'#fff', lineHeight:1.0 }}>WITH KNOWLEDGE</span>
-              <span style={{ display:'block', fontSize:'clamp(2.8rem,7vw,5.8rem)', lineHeight:1.0 }} className="gradient-text">COMES RESPONSIBILITY</span>
+              <span style={{ display:'block', fontSize:'clamp(1.8rem,4.5vw,3.6rem)', color:'#fff', lineHeight:1.0 }}>WITH KNOWLEDGE</span>
+              <span style={{ display:'block', fontSize:'clamp(1.8rem,4.5vw,3.6rem)', lineHeight:1.0 }} className="gradient-text">COMES RESPONSIBILITY</span>
             </motion.h1>
 
             {/* Sub */}
@@ -980,6 +1012,21 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
               transition={{ delay:0.5, duration:0.6, ease:[0.22,1,0.36,1] }}
               style={{ width:'100%', maxWidth:'620px', position:'relative', zIndex:2 }}>
 
+              {/* Mode tabs */}
+              <div style={{ display:'flex', gap:4, marginBottom:8 }}>
+                {[['find','FIND'],['compare','COMPARE'],['research','RESEARCH']].map(([m, label]) => (
+                  <button key={m} type="button" onClick={() => setSearchMode(m)} style={{
+                    flex:1, padding:'8px 0', fontFamily:'monospace', fontSize:'0.88rem',
+                    fontWeight: searchMode===m ? 800 : 600, letterSpacing:'0.14em',
+                    border: searchMode===m ? '1px solid rgba(220,20,60,0.9)' : '1px solid rgba(255,255,255,0.12)',
+                    borderRadius:3, cursor:'pointer', transition:'all 0.18s',
+                    background: 'transparent',
+                    color: searchMode===m ? '#fff' : 'rgba(255,255,255,0.45)',
+                    boxShadow: 'none',
+                  }}>{label}</button>
+                ))}
+              </div>
+
               <form onSubmit={handleSubmit}>
                 <div style={{
                   background:'rgba(4,0,0,0.8)', border:'1px solid rgba(220,20,60,0.4)',
@@ -989,31 +1036,81 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
                 }}>
                   {/* terminal top bar */}
                   <div style={{ background:'rgba(220,20,60,0.08)', borderBottom:'1px solid rgba(220,20,60,0.2)', padding:'6px 12px', display:'flex', alignItems:'center', gap:'8px' }}>
-                    <span style={{ fontFamily:'monospace', fontSize:'0.55rem', color:'rgba(220,20,60,0.5)', letterSpacing:'0.15em' }}>SPIDER://SEARCH_QUERY</span>
+                    <span style={{ fontFamily:'monospace', fontSize:'0.55rem', color:'rgba(220,20,60,0.5)', letterSpacing:'0.15em' }}>
+                      {searchMode==='find' ? 'SPIDER://FIND_PRODUCT' : searchMode==='compare' ? 'SPIDER://COMPARE_PRODUCTS' : 'SPIDER://SEARCH_QUERY'}
+                    </span>
                     <span style={{ marginLeft:'auto', fontFamily:'monospace', fontSize:'0.5rem', color:'rgba(220,20,60,0.35)' }}>⬤ LIVE</span>
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 14px' }}>
-                    <span style={{ color:'rgba(220,20,60,0.6)', fontFamily:'monospace', fontSize:'0.85rem', flexShrink:0 }}>›_</span>
-                    <input type="text" value={inputValue} onChange={e=>setInputValue(e.target.value)}
-                      disabled={isLoading}
-                      placeholder={typingText || 'enter search target...'}
-                      style={{ flex:1, background:'transparent', border:'none', outline:'none', color:'#e2e8f0', fontSize:'0.95rem', fontFamily:'monospace', opacity:isLoading?0.6:1, caretColor:'#e63946' }}
-                    />
-                    <button type="submit" disabled={isLoading||!inputValue.trim()} style={{
-                      background: isLoading||!inputValue.trim() ? 'rgba(220,20,60,0.2)' : '#e63946',
-                      color:'#fff', border:'none', borderRadius:'3px',
-                      padding:'8px 18px', fontSize:'0.78rem', fontWeight:800,
-                      cursor: isLoading||!inputValue.trim() ? 'not-allowed':'pointer',
-                      display:'flex', alignItems:'center', gap:'6px', whiteSpace:'nowrap',
-                      fontFamily:'monospace', letterSpacing:'0.1em', transition:'all 0.2s',
-                      boxShadow: isLoading||!inputValue.trim() ? 'none' : '0 0 16px rgba(220,20,60,0.5)',
-                    }}>
-                      {isLoading ? <Loader2 size={13} style={{ animation:'spin 1s linear infinite' }}/> : <span>SCAN</span>}
-                      {isLoading ? 'SCANNING...' : '⟶'}
-                    </button>
-                  </div>
+
+                  {searchMode === 'compare' ? (
+                    <div style={{ padding:'10px 14px', display:'flex', flexDirection:'column', gap:8 }}>
+                      {compareUrls.map((u, i) => (
+                        <div key={i} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <span style={{ color:'rgba(220,20,60,0.5)', fontFamily:'monospace', fontSize:'0.75rem', flexShrink:0 }}>{i+1}.</span>
+                          <input type="text" value={u} disabled={isLoading}
+                            onChange={e => setCompareUrls(prev => prev.map((v,j) => j===i ? e.target.value : v))}
+                            placeholder="https://www.amazon.in/dp/..."
+                            style={{ flex:1, background:'transparent', border:'none', borderBottom:'1px solid rgba(220,20,60,0.2)', outline:'none', color:'#e2e8f0', fontSize:'0.82rem', fontFamily:'monospace', padding:'2px 0', caretColor:'#e63946' }}
+                          />
+                          {compareUrls.length > 2 && (
+                            <button type="button" onClick={() => setCompareUrls(prev => prev.filter((_,j)=>j!==i))}
+                              style={{ background:'none', border:'none', color:'rgba(220,20,60,0.4)', cursor:'pointer', fontSize:14, padding:0 }}>✕</button>
+                          )}
+                        </div>
+                      ))}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:4 }}>
+                        <button type="button" onClick={() => setCompareUrls(prev => [...prev, ''])}
+                          style={{ background:'none', border:'1px solid rgba(220,20,60,0.2)', borderRadius:3, padding:'3px 10px', color:'rgba(220,20,60,0.5)', fontSize:'0.68rem', fontFamily:'monospace', cursor:'pointer' }}>
+                          + ADD URL
+                        </button>
+                        <button type="submit" disabled={isLoading} style={{
+                          background: isLoading ? 'rgba(220,20,60,0.2)' : '#e63946',
+                          color:'#fff', border:'none', borderRadius:'3px',
+                          padding:'8px 18px', fontSize:'0.78rem', fontWeight:800,
+                          cursor: isLoading ? 'not-allowed':'pointer',
+                          display:'flex', alignItems:'center', gap:'6px', whiteSpace:'nowrap',
+                          fontFamily:'monospace', letterSpacing:'0.1em', transition:'all 0.2s',
+                        }}>
+                          {isLoading ? <Loader2 size={13} style={{ animation:'spin 1s linear infinite' }}/> : null}
+                          {isLoading ? 'SCANNING...' : 'COMPARE ⟶'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'10px 14px' }}>
+                      <span style={{ color:'rgba(220,20,60,0.6)', fontFamily:'monospace', fontSize:'0.85rem', flexShrink:0 }}>›_</span>
+                      <input type="text" value={inputValue} onChange={e=>setInputValue(e.target.value)}
+                        disabled={isLoading}
+                        placeholder={searchMode==='find' ? 'https://www.amazon.in/dp/...' : (typingText || 'enter search target...')}
+                        style={{ flex:1, background:'transparent', border:'none', outline:'none', color:'#e2e8f0', fontSize:'0.95rem', fontFamily:'monospace', opacity:isLoading?0.6:1, caretColor:'#e63946' }}
+                      />
+                      <button type="submit" disabled={isLoading||!inputValue.trim()} style={{
+                        background: isLoading||!inputValue.trim() ? 'rgba(220,20,60,0.2)' : '#e63946',
+                        color:'#fff', border:'none', borderRadius:'3px',
+                        padding:'8px 18px', fontSize:'0.78rem', fontWeight:800,
+                        cursor: isLoading||!inputValue.trim() ? 'not-allowed':'pointer',
+                        display:'flex', alignItems:'center', gap:'6px', whiteSpace:'nowrap',
+                        fontFamily:'monospace', letterSpacing:'0.1em', transition:'all 0.2s',
+                        boxShadow: isLoading||!inputValue.trim() ? 'none' : '0 0 16px rgba(220,20,60,0.5)',
+                      }}>
+                        {isLoading ? <Loader2 size={13} style={{ animation:'spin 1s linear infinite' }}/> : <span>SCAN</span>}
+                        {isLoading ? 'SCANNING...' : '⟶'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </form>
+
+              {/* URL error */}
+              <AnimatePresence>
+                {urlError && (
+                  <motion.div initial={{ opacity:0, y:-8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-8 }}
+                    transition={{ duration:0.2 }}
+                    style={{ marginTop:10, padding:'8px 14px', background:'rgba(220,20,60,0.08)', border:'1px solid rgba(220,20,60,0.3)', borderRadius:6, fontSize:'0.78rem', color:'#ff8c94', fontFamily:'monospace' }}>
+                    {urlError}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Config warning */}
               <AnimatePresence>
@@ -1025,7 +1122,7 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
                   >
                     <span style={{ fontSize: 16 }}>⚠️</span>
                     <span style={{ flex: 1, fontSize: '0.78rem', color: '#ff8c94', fontFamily: 'monospace', lineHeight: 1.5 }}>
-                      API keys not configured. You need a <strong>RapidAPI key</strong> and a <strong>LLM API key</strong> to start research.
+                      Missing: <strong>{missingKeys().join(' and ')}</strong>. Open settings to configure.
                     </span>
                     <button
                       onClick={() => { setConfigWarning(false); onSettingsOpen?.() }}
@@ -1037,8 +1134,8 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
                 )}
               </AnimatePresence>
 
-              {/* Quick pills */}
-              {!isLoading && (
+              {/* Quick pills — research mode only */}
+              {!isLoading && searchMode === 'research' && (
                 <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.7 }}
                   style={{ display:'flex', flexWrap:'wrap', gap:'6px', marginTop:'12px', justifyContent:'center' }}>
                   {QUICK_PILLS.map(pill => (

@@ -26,7 +26,7 @@ from backend.agents.ranker import ranker_agent_node, comparison_ranker_node
 
 
 def route_after_parallel(state: Blackboard) -> str:
-    return "comparison_ranker" if state.get("mode") == "comparison" else "ranker_agent"
+    return "comparison_ranker" if state.get("mode") in ("comparison", "find") else "ranker_agent"
 
 
 def build_graph() -> StateGraph:

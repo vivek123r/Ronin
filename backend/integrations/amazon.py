@@ -39,6 +39,7 @@ def get_product_details(asin: str, region: str = "IN") -> dict:
             timeout=20,
         )
         if resp.status_code != 200:
+            print(f"  ⚠️  get_product_details HTTP {resp.status_code} for {asin}: {resp.text[:200]}")
             return {}
 
         d = resp.json().get("data", {})

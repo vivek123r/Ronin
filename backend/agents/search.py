@@ -248,16 +248,30 @@ def comparison_search_agent_node(state: Blackboard) -> dict:
             "confidence":     {**state.get("confidence", {}), "search_agent": 0.1},
         }
 
-    print(f"  🔍 Resolving {len(products_to_compare)} products on Amazon…")
+    import re as _re
+    print(f"  [Comparison] Resolving {len(products_to_compare)} products…")
     orig_to_resolved: dict = {}
 
+    def _resolve_one(orig):
+        # If it's already an ASIN (10 char alphanumeric), fetch directly
+        if _re.match(r'^[A-Z0-9]{10}$', orig):
+            data = get_product_details(orig)
+            if data:
+                title = data.get("product_title", orig)
+                print(f"     [Direct ASIN] {orig} → '{title[:50]}'")
+                return orig, (title, orig)
+            print(f"     [Direct ASIN] {orig} — no data returned")
+            return orig, (orig, orig)
+        # Otherwise search Amazon
+        title, asin = resolve_product_name(orig)
+        print(f"     [Resolved] '{orig}' → '{title[:50]}' (ASIN: {asin or 'n/a'})")
+        return orig, (title, asin)
+
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(resolve_product_name, n): n for n in products_to_compare}
+        futures = {executor.submit(_resolve_one, n): n for n in products_to_compare}
         for future in as_completed(futures):
-            orig = futures[future]
-            title, asin = future.result()
-            orig_to_resolved[orig] = (title, asin)
-            print(f"     ✅ Resolved '{orig}' → '{title[:50]}' (ASIN: {asin or 'n/a'})")
+            orig, result = future.result()
+            orig_to_resolved[orig] = result
 
     def _url_fallback(orig_name: str, reason: str) -> tuple:
         from backend.api import request_url_from_frontend
@@ -285,10 +299,11 @@ def comparison_search_agent_node(state: Blackboard) -> dict:
     asin_to_first: dict = {}
     for orig in products_to_compare:
         title, asin = orig_to_resolved.get(orig, (orig, ""))
-        if not asin:
+        is_raw_asin = bool(_re.match(r'^[A-Z0-9]{10}$', orig))
+        if not asin and not is_raw_asin:
             title, asin = _url_fallback(orig, "Could not auto-resolve on Amazon")
             orig_to_resolved[orig] = (title, asin)
-        if asin and asin in asin_to_first:
+        if asin and asin in asin_to_first and not is_raw_asin:
             title, asin = _url_fallback(orig, f"Resolved to same product as '{asin_to_first[asin]}'")
             orig_to_resolved[orig] = (title, asin)
         if asin:

@@ -123,7 +123,9 @@ function App() {
   }
 
   const handleSearch = async (q) => {
-    setQuery(q)
+    // Display-friendly label
+    const displayQ = q.startsWith('FIND:') ? 'Product Analysis' : q.startsWith('COMPARE:') ? 'Product Comparison' : q
+    setQuery(displayQ)
     setStatus('loading')
     setProgress([])
     setResult(null)
@@ -158,6 +160,7 @@ function App() {
             if (msg.type === 'progress') setProgress(p => [...p, msg.message])
             if (msg.type === 'result') setPendingResult({ data: msg.data, q })
             if (msg.type === 'error') { setError(msg.message); setStatus('error') }
+            if (msg.type === 'wrong_mode') { setError(`WRONG_MODE:${msg.suggest}:${msg.message}`); setStatus('error') }
             if (msg.type === 'url_request') setUrlRequest({ product: msg.product, reason: msg.reason, threadId: msg.thread_id })
           } catch (e) {}
         }
@@ -236,16 +239,27 @@ function App() {
               exit={{ opacity: 0, y: -20 }}
               style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px' }}
             >
-              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '16px', padding: '32px 40px', textAlign: 'center', maxWidth: '480px' }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
-                <p style={{ color: '#f87171', fontSize: '18px', marginBottom: '8px', fontWeight: 700 }}>Something went wrong</p>
-                <p style={{ color: '#94a3b8', fontSize: '14px', lineHeight: 1.6 }}>{error}</p>
-              </div>
+              {error?.startsWith('WRONG_MODE:') ? (() => {
+                const [, suggest, msg] = error.split(':', 3)
+                return (
+                  <div style={{ background: 'rgba(220,20,60,0.08)', border: '1px solid rgba(220,20,60,0.35)', borderRadius: '16px', padding: '32px 40px', textAlign: 'center', maxWidth: '500px' }}>
+                    <div style={{ fontSize: '36px', marginBottom: '12px' }}>↩</div>
+                    <p style={{ color: '#ff8c94', fontSize: '16px', marginBottom: '8px', fontWeight: 700, fontFamily: 'monospace' }}>Switch to {suggest.toUpperCase()} mode</p>
+                    <p style={{ color: '#94a3b8', fontSize: '13px', lineHeight: 1.6, fontFamily: 'monospace' }}>{msg}</p>
+                  </div>
+                )
+              })() : (
+                <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '16px', padding: '32px 40px', textAlign: 'center', maxWidth: '480px' }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+                  <p style={{ color: '#f87171', fontSize: '18px', marginBottom: '8px', fontWeight: 700 }}>Something went wrong</p>
+                  <p style={{ color: '#94a3b8', fontSize: '14px', lineHeight: 1.6 }}>{error}</p>
+                </div>
+              )}
               <button
                 onClick={handleNewSearch}
                 style={{ background: 'linear-gradient(135deg,#e63946,#e63946)', color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 28px', fontWeight: 700, cursor: 'pointer', fontSize: '14px', boxShadow: '0 4px 20px rgba(220,20,60,0.4)' }}
               >
-                Try Again
+                Go Back
               </button>
             </motion.div>
           ) : showHive ? (

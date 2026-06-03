@@ -165,7 +165,11 @@ async def search(request: Request):
                 result = _pipeline.find_best_product(query)
                 result_container["result"] = result
             except Exception as exc:
-                error_container["error"] = str(exc)
+                err = str(exc)
+                if err.startswith("WRONG_MODE:"):
+                    error_container["wrong_mode"] = err
+                else:
+                    error_container["error"] = err
             finally:
                 sys.stdout = old_stdout
                 _rc.clear_config()
@@ -185,7 +189,10 @@ async def search(request: Request):
                 break
             yield sse_event(item)
 
-        if error_container:
+        if "wrong_mode" in error_container:
+            parts = error_container["wrong_mode"].split(":", 2)
+            yield sse_event({"type": "wrong_mode", "suggest": parts[1] if len(parts)>1 else "", "message": parts[2] if len(parts)>2 else ""})
+        elif error_container:
             yield sse_event({"type": "error", "message": error_container["error"]})
         elif result_container:
             history.append({"query": query, "result": result_container["result"]})
