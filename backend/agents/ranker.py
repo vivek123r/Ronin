@@ -25,7 +25,6 @@ def ranker_agent_node(state: Blackboard) -> dict:
     product_cache = opinions.get("search_agent", {}).get("product_cache", {})
     query         = state["query"]
 
-    # Generate a display message with LLM but always use hardcoded weights
     llm.invoke([
         SystemMessage(content=(
             "You assign product ranking weights based on what a query implies. "
@@ -34,9 +33,8 @@ def ranker_agent_node(state: Blackboard) -> dict:
         HumanMessage(content=f"Query: \"{query}\""),
     ])
 
-    # Fixed weights: quality 80%, price 10%, availability 10%
     q_w, p_w, a_w = 0.8, 0.1, 0.1
-    print(f"  ⚖️  Weights — quality:{q_w:.0%} price:{p_w:.0%} availability:{a_w:.0%}")
+    print(f"  [Ranker] Weights -- quality:{q_w:.0%} price:{p_w:.0%} availability:{a_w:.0%}")
 
     ranked_products = []
 
@@ -73,7 +71,7 @@ def ranker_agent_node(state: Blackboard) -> dict:
     ranked_products.sort(key=lambda x: x["combined_score"], reverse=True)
     winner = ranked_products[0] if ranked_products else None
     if winner:
-        print(f"  🏆 Winner: {winner['name'][:60]}")
+        print(f"  [Ranker] Winner: {winner['name'][:60]}")
 
     result = {
         "ranked": [
@@ -84,9 +82,14 @@ def ranker_agent_node(state: Blackboard) -> dict:
                 "quality":           round(p["quality_score"], 1),
                 "price_score":       round(p["price_score"], 1),
                 "price_inr":         p["price_data"].get("price_inr", "N/A"),
-                "availability":      "✅ In Stock" if p["price_data"].get("availability") else "❌ N/A",
+                "availability":      "In Stock" if p["price_data"].get("availability") else "N/A",
                 "url":               p["price_data"].get("url", "N/A"),
                 "product_image_url": _get_image(p["name"], product_cache),
+                "category_scores":   p["review_data"].get("category_scores", {}),
+                "benefits":          p["review_data"].get("benefits", []),
+                "losses":            p["review_data"].get("losses", []),
+                "sentiment":         p["review_data"].get("sentiment", "neutral"),
+                "confidence":        p["review_data"].get("confidence", 0.3),
             }
             for i, p in enumerate(ranked_products[:10])
         ],
@@ -100,16 +103,17 @@ def ranker_agent_node(state: Blackboard) -> dict:
             "reviews":        winner["price_data"].get("reviews_count", 0) if winner else 0,
             "url":            winner["price_data"].get("url", "N/A") if winner else "N/A",
             "why": (
-                f"Query intent weights — quality:{q_w:.0%} × price:{p_w:.0%} × availability:{a_w:.0%}. "
-                f"Score: {winner['quality_score']:.0f}×{winner['eff_weights']['quality']:.2f} + "
-                f"{winner['price_score']:.0f}×{winner['eff_weights']['price']:.2f} + "
-                f"{winner['availability_score']:.0f}×{winner['eff_weights']['availability']:.2f} = "
+                f"Query intent weights -- quality:{q_w:.0%} x price:{p_w:.0%} x availability:{a_w:.0%}. "
+                f"Score: {winner['quality_score']:.0f}x{winner['eff_weights']['quality']:.2f} + "
+                f"{winner['price_score']:.0f}x{winner['eff_weights']['price']:.2f} + "
+                f"{winner['availability_score']:.0f}x{winner['eff_weights']['availability']:.2f} = "
                 f"{winner['combined_score']:.1f}/100"
             ) if winner else "No products found",
             "benefits":          winner["review_data"].get("benefits", []) if winner else [],
             "losses":            winner["review_data"].get("losses",   []) if winner else [],
             "confidence":        min(0.95, winner["combined_score"] / 100) if winner else 0.1,
             "product_image_url": _get_image(winner["name"], product_cache) if winner else None,
+            "category_scores":   winner["review_data"].get("category_scores", {}) if winner else {},
         },
         "weights_used":    {"quality": q_w, "price": p_w, "availability": a_w},
         "methodology":     "Fixed weights: quality 80%, price 10%, availability 10%",
@@ -135,17 +139,18 @@ def comparison_ranker_node(state: Blackboard) -> dict:
         rd = review_data.get(product, {})
         pd = price_data.get(product, {})
         comparison_table.append({
-            "name":         product,
-            "quality":      float(rd.get("rating", 50) or 50),
-            "price_inr":    pd.get("price_inr", 0),
-            "price_score":  float(pd.get("price_score", 0) or 0),
-            "availability": "✅ In Stock" if pd.get("availability") else "❌ N/A",
-            "url":          pd.get("url", ""),
-            "benefits":     rd.get("benefits", []),
-            "losses":       rd.get("losses", []),
-            "sentiment":    rd.get("sentiment", "neutral"),
-            "highlights":   rd.get("review_highlights", []),
-            "confidence":   rd.get("confidence", 0.3),
+            "name":            product,
+            "quality":         float(rd.get("rating", 50) or 50),
+            "price_inr":       pd.get("price_inr", 0),
+            "price_score":     float(pd.get("price_score", 0) or 0),
+            "availability":    "In Stock" if pd.get("availability") else "N/A",
+            "url":             pd.get("url", ""),
+            "benefits":        rd.get("benefits", []),
+            "losses":          rd.get("losses", []),
+            "sentiment":       rd.get("sentiment", "neutral"),
+            "highlights":      rd.get("review_highlights", []),
+            "confidence":      rd.get("confidence", 0.3),
+            "category_scores": rd.get("category_scores", {}),
         })
 
     comparison_table.sort(key=lambda x: x["quality"], reverse=True)

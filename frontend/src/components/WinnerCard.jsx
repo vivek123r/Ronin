@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { ProductDNA } from './RadarChart'
 
 function SpiderIcon({ color = '#e63946', size = 16 }) {
   return (
@@ -77,8 +78,11 @@ function findInCache(productCache, name) {
 
 export default function WinnerCard({ winner, weights, productCache }) {
   const [displayedConf, setDisplayedConf] = useState(0)
+  const [showDNA, setShowDNA] = useState(true)
   const cached = findInCache(productCache, winner?.name) || {}
   const imageUrl = winner?.product_image_url || cached?.product_image_url
+  const categoryScores = winner?.category_scores || {}
+  const hasDNA = Object.keys(categoryScores).length >= 3
 
   useEffect(() => {
     if (!winner?.confidence) return
@@ -94,18 +98,16 @@ export default function WinnerCard({ winner, weights, productCache }) {
   }, [winner?.confidence])
 
   const formatPrice = (p) => p ? `₹${Number(p).toLocaleString('en-IN')}` : '—'
-  const avail = winner?.availability?.includes('✅') || winner?.availability?.toLowerCase().includes('in stock') ? 'IN STOCK' : winner?.availability || '—'
+  const avail = winner?.availability?.includes('In Stock') || winner?.availability?.toLowerCase?.().includes('in stock') ? 'IN STOCK' : winner?.availability || '—'
 
   return (
     <div style={{ position: 'relative', overflow: 'hidden', background: 'rgba(8,0,0,0.7)', border: '1px solid rgba(220,20,60,0.25)', borderRadius: 18, padding: '32px', backdropFilter: 'blur(16px)', boxShadow: '0 0 60px rgba(220,20,60,0.1), inset 0 0 40px rgba(220,20,60,0.03)' }}>
 
-      {/* Background web pattern */}
       <WebPatternSVG />
 
-      {/* Red radial glow */}
       <div style={{ position: 'absolute', top: 0, right: '10%', width: '40%', height: '100%', background: 'radial-gradient(ellipse at top right, rgba(220,20,60,0.08), transparent 70%)', pointerEvents: 'none', zIndex: 0 }}/>
 
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
         {/* Left: image */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -174,6 +176,37 @@ export default function WinnerCard({ winner, weights, productCache }) {
           )}
         </div>
       </div>
+
+      {/* DNA Profile section */}
+      {hasDNA && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 2.0, duration: 0.5 }}
+          style={{ position: 'relative', zIndex: 1, marginTop: 24, padding: '20px 16px', background: 'rgba(220,20,60,0.03)', border: '1px solid rgba(220,20,60,0.12)', borderRadius: 12 }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(220,20,60,0.6)', fontFamily: 'monospace', fontWeight: 700 }}>
+              ◈ DNA PROFILE
+            </div>
+            <button
+              onClick={() => setShowDNA(!showDNA)}
+              style={{ background: 'rgba(220,20,60,0.08)', border: '1px solid rgba(220,20,60,0.2)', color: '#ff6b75', borderRadius: 4, padding: '2px 8px', fontSize: 9, fontFamily: 'monospace', cursor: 'pointer', letterSpacing: '0.06em' }}
+            >
+              {showDNA ? 'HIDE' : 'SHOW'}
+            </button>
+          </div>
+          {showDNA && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+            >
+              <ProductDNA categoryScores={categoryScores} size={260} />
+            </motion.div>
+          )}
+        </motion.div>
+      )}
     </div>
   )
 }

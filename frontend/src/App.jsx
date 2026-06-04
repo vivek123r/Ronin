@@ -217,7 +217,7 @@ function App() {
     <div style={{ minHeight: '100vh', backgroundColor: '#080808', fontFamily: 'Inter, sans-serif', color: '#e2e8f0' }}>
       <SpiderFX />
 
-      {!showHive && (
+      {!showHive && !showResults && status !== 'error' && (
         <HistorySidebar
           isOpen={historyOpen}
           onToggle={() => setHistoryOpen(o => !o)}

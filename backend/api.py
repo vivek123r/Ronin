@@ -1,5 +1,5 @@
 """
-RONIN FastAPI server — streams pipeline progress via SSE, serves the React SPA.
+RONIN FastAPI server -- streams pipeline progress via SSE, serves the React SPA.
 """
 
 import sys
@@ -9,13 +9,12 @@ import asyncio
 import io
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Any
+from typing import Dict, Any, List
 from collections import deque
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# Enable API mode so the pipeline skips the interactive human_loop
 from backend.agents import search as _search_module
 _search_module.API_MODE = True
 
@@ -27,17 +26,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
-# ── In-memory history (last 20 searches) ─────────────────────────────────────
+from backend.utils.llm import llm as _llm_proxy
+from langchain_core.messages import HumanMessage, SystemMessage
+
 history: deque = deque(maxlen=20)
 
-# ── Thread pool for the blocking pipeline ────────────────────────────────────
 executor = ThreadPoolExecutor(max_workers=4)
 
-# ── Per-request URL prompt store (thread_id → {event, result, queue, loop}) ──
 _url_requests: Dict[str, Any] = {}
 _url_lock = threading.Lock()
 
-app = FastAPI(title="RONIN — Product Research API")
+app = FastAPI(title="RONIN -- Product Research API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,7 +46,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Static files ──────────────────────────────────────────────────────────────
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 os.makedirs(static_dir, exist_ok=True)
 
@@ -65,17 +63,14 @@ async def index():
     return FileResponse(os.path.join(static_dir, "index.html"))
 
 
-# ── SSE helper ────────────────────────────────────────────────────────────────
 def sse_event(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-# ── Per-request stdout capture → SSE queue ───────────────────────────────────
 _thread_local = threading.local()
 
 
 def request_url_from_frontend(product_name: str, reason: str) -> str:
-    """Called from pipeline thread. Sends url_request SSE event, blocks until frontend responds."""
     tid = str(threading.get_ident())
     registered_tid = tid
     entry = _url_requests.get(tid)
@@ -91,7 +86,7 @@ def request_url_from_frontend(product_name: str, reason: str) -> str:
         sys.__stdout__.write(f"[DEBUG request_url] fallback registered_tid={registered_tid} entry={'FOUND' if entry else 'MISSING'}\n")
         sys.__stdout__.flush()
     if not entry:
-        sys.__stdout__.write(f"[DEBUG request_url] NO ENTRY — returning empty\n")
+        sys.__stdout__.write(f"[DEBUG request_url] NO ENTRY -- returning empty\n")
         sys.__stdout__.flush()
         return ""
     evt = threading.Event()
@@ -137,12 +132,11 @@ class SSECapture(io.StringIO):
         sys.__stdout__.flush()
 
 
-# ── /search SSE endpoint ──────────────────────────────────────────────────────
 @app.post("/search")
 async def search(request: Request):
     body   = await request.json()
     query  = body.get("query", "").strip()
-    config = body.get("config", {})   # user-supplied API keys / LLM config
+    config = body.get("config", {})
     if not query:
         return JSONResponse({"error": "query is required"}, status_code=400)
 
@@ -211,32 +205,23 @@ async def search(request: Request):
     )
 
 
-# ── /url_response endpoint — frontend submits URL back to waiting pipeline ───
 @app.post("/url_response")
 async def url_response(request: Request):
     body    = await request.json()
     tid     = body.get("thread_id", "")
     url     = body.get("url", "").strip()
-    sys.__stdout__.write(f"[DEBUG url_response] tid={tid} url={url[:80]} all_keys={list(_url_requests.keys())}\n")
-    sys.__stdout__.flush()
     with _url_lock:
         entry = _url_requests.get(tid)
     if not entry or not entry.get("pending"):
-        sys.__stdout__.write(f"[DEBUG url_response] FAILED — entry={entry} pending={entry.get('pending') if entry else None}\n")
-        sys.__stdout__.flush()
         return JSONResponse({"ok": False, "error": "no pending request"})
     with _url_lock:
         entry["pending"]["result"] = url
         entry["pending"]["event"].set()
-    sys.__stdout__.write(f"[DEBUG url_response] SUCCESS — event fired\n")
-    sys.__stdout__.flush()
     return JSONResponse({"ok": True})
 
 
-# ── /url_pending — frontend polls to get the thread_id for a live search ─────
 @app.get("/url_pending")
 async def url_pending():
-    """Returns any pending URL request (product + thread_id) so frontend can display the modal."""
     with _url_lock:
         for tid, entry in _url_requests.items():
             pending = entry.get("pending")
@@ -246,7 +231,6 @@ async def url_pending():
     return JSONResponse({"pending": False})
 
 
-# ── /providers endpoint ───────────────────────────────────────────────────────
 @app.get("/providers")
 async def get_providers():
     return JSONResponse([
@@ -260,13 +244,54 @@ async def get_providers():
     ])
 
 
-# ── /history endpoint ─────────────────────────────────────────────────────────
 @app.get("/history")
 async def get_history():
     return JSONResponse(list(history))
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# -- /chat endpoint -- conversational follow-up about research results ---------
+_CHAT_SYSTEM = """You are an AI product intelligence analyst for RONIN (Rise of Neural Intelligence Networks).
+You have researched products and gathered review data, pricing, specs, and category scores.
+
+Your task: answer follow-up questions about the products. Be specific, reference actual data, and give recommendations.
+Use the product context provided in each message. Keep answers concise (1-3 paragraphs).
+If asked about something not in the data, say so honestly.
+Never make up product specifications not present in the provided context."""
+
+
+@app.post("/chat")
+async def chat(request: Request):
+    body = await request.json()
+    context = body.get("context", {})          # the full result object
+    messages = body.get("messages", [])         # conversation history [{role, content}]
+    config = body.get("config", {})             # API keys
+
+    if not messages:
+        return JSONResponse({"error": "messages required"}, status_code=400)
+
+    # Set per-request config for the LLM
+    _rc.set_config(config)
+
+    try:
+        # Build system message with full product context
+        context_str = json.dumps(context, indent=2, ensure_ascii=False)
+        system_content = f"{_CHAT_SYSTEM}\n\nCurrent research data:\n{context_str}"
+
+        # Build langchain messages
+        lc_messages = [SystemMessage(content=system_content)]
+        for msg in messages:
+            if msg.get("role") == "user":
+                lc_messages.append(HumanMessage(content=msg.get("content", "")))
+
+        response = _llm_proxy.invoke(lc_messages)
+        return JSONResponse({"reply": response.content})
+
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    finally:
+        _rc.clear_config()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.api:app", host="0.0.0.0", port=8000, reload=False)

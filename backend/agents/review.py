@@ -11,7 +11,17 @@ _SYSTEM = """You are a review and sentiment analyst.
 - Analyse data from Amazon verified reviews, YouTube expert transcripts, and Reddit community discussions
 - Score each product 0-100 based on what real users and reviewers actually said
 - Weight verified Amazon purchases heavily; treat YouTube transcripts as expert opinion; treat Reddit upvoted posts as community consensus
-- Be specific — quote or paraphrase actual review content where possible
+- Be specific -- quote or paraphrase actual review content where possible
+
+IMPORTANT - Category Scoring: Determine 4-7 product-specific category axes based on what users actually discussed in the reviews. Examples:
+- Headphones/Earbuds: "Sound Quality", "Build Quality", "Battery", "Comfort", "Value", "Gaming"
+- Laptops: "Performance", "Battery", "Build", "Display", "Value", "Portability"
+- Kitchen appliances: "Performance", "Build", "Noise", "Ease of Use", "Value", "Cleaning"
+- Smartphones: "Display", "Battery", "Camera", "Performance", "Build", "Value"
+- Generic categories if unsure: "Quality", "Value", "Durability", "Features", "Ease of Use"
+
+Score each category 0-100 based on review sentiment for that specific aspect. Only include categories that were actually discussed in reviews.
+
 Return ONLY raw JSON:
 {
   "rating": 0-100,
@@ -19,7 +29,8 @@ Return ONLY raw JSON:
   "losses": ["..."],
   "sentiment": "positive|neutral|negative",
   "confidence": 0.0-1.0,
-  "review_highlights": ["key quote 1", "key quote 2"]
+  "review_highlights": ["key quote 1", "key quote 2"],
+  "category_scores": {"Category Name": 85, "Another Category": 72}
 }"""
 
 
@@ -105,7 +116,7 @@ def _review_product(product: str, product_cache: dict) -> tuple:
         )
 
     sources_used = sum([bool(amz_section), bool(yt_section), bool(reddit_section)])
-    print(f"     {sources_used}/3 sources available — invoking LLM scorer")
+    print(f"     {sources_used}/3 sources available -- invoking LLM scorer")
 
     response = llm.invoke([
         SystemMessage(content=_SYSTEM),
@@ -123,8 +134,9 @@ def _review_product(product: str, product_cache: dict) -> tuple:
         result = {
             "rating": 50, "benefits": [], "losses": ["Limited review data available"],
             "sentiment": "neutral", "confidence": 0.3, "review_highlights": [],
+            "category_scores": {"Quality": 50, "Value": 50, "Features": 50, "Durability": 50},
         }
-        print(f"     ⚠️  JSON parse failed — fallback 50/100")
+        print(f"     ⚠️  JSON parse failed -- fallback 50/100")
 
     print(f"     ✅ Rating: {result.get('rating','?')}/100 | AMZ:{len(amazon_data.get('reviews',[]))} YT:{len(youtube_data)} RDT:{len(reddit_data)}")
     return product, result
@@ -161,6 +173,7 @@ def review_agent_node(state: Blackboard) -> dict:
                 findings["products_analyzed"][p] = {
                     "rating": 50, "benefits": [], "losses": ["Review fetch failed"],
                     "sentiment": "neutral", "confidence": 0.2, "review_highlights": [],
+                    "category_scores": {"Quality": 50, "Value": 50, "Features": 50, "Durability": 50},
                 }
 
     avg_confidence = (
@@ -168,7 +181,7 @@ def review_agent_node(state: Blackboard) -> dict:
         / max(len(findings["products_analyzed"]), 1)
     )
     count = len(findings["products_analyzed"])
-    print(f"  [Review] sending intelligence to master — {count} products analyzed")
+    print(f"  [Review] sending intelligence to master -- {count} products analyzed")
     print(f"  ✅ [Review] {count} products analyzed")
 
     return {
