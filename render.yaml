@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: ronin-app
+    env: python
+    buildCommand: bash build.sh
+    startCommand: python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14
