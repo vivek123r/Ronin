@@ -55,12 +55,7 @@ if os.path.exists(wallpaper_src) and not os.path.exists(wallpaper_dst):
     import shutil
     shutil.copy2(wallpaper_src, wallpaper_dst)
 
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-
-@app.get("/")
-async def index():
-    return FileResponse(os.path.join(static_dir, "index.html"))
+app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 
 def sse_event(data: dict) -> str:
