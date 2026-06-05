@@ -190,7 +190,7 @@ export default function ChatWindow({ result, query, embedded, collapsed, onToggl
   }
 
   return (
-    <div style={{ ...panelStyles, width, height: embedded ? undefined : height, overflow: 'hidden' }}>
+    <div style={{ ...panelStyles, width, height: embedded ? undefined : height }}>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,

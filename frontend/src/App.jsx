@@ -6,6 +6,7 @@ import ResultsPanel from './components/ResultsPanel'
 import HistorySidebar from './components/HistorySidebar'
 import SpiderFX from './components/SpiderFX'
 import SettingsModal, { loadConfig } from './components/SettingsModal'
+import MusicToggle, { playTheme, pauseTheme } from './components/MusicToggle'
 
 const HISTORY_KEY = 'ronin_history'
 
@@ -123,6 +124,7 @@ function App() {
   }
 
   const handleSearch = async (q) => {
+    playTheme()
     // Display-friendly label
     const displayQ = q.startsWith('FIND:') ? 'Product Analysis' : q.startsWith('COMPARE:') ? 'Product Comparison' : q
     setQuery(displayQ)
@@ -177,6 +179,7 @@ function App() {
   }
 
   const handleHiveComplete = () => {
+    pauseTheme()
     if (pendingResult) {
       setResult(pendingResult.data)
       setStatus('done')

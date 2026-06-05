@@ -34,7 +34,7 @@ def ranker_agent_node(state: Blackboard) -> dict:
     ])
 
     q_w, p_w, a_w = 0.8, 0.1, 0.1
-    print(f"  [Ranker] Weights -- quality:{q_w:.0%} price:{p_w:.0%} availability:{a_w:.0%}")
+    print(f"  [Ranker] Weights — quality:{q_w:.0%} price:{p_w:.0%} availability:{a_w:.0%}")
 
     ranked_products = []
 
@@ -71,7 +71,7 @@ def ranker_agent_node(state: Blackboard) -> dict:
     ranked_products.sort(key=lambda x: x["combined_score"], reverse=True)
     winner = ranked_products[0] if ranked_products else None
     if winner:
-        print(f"  [Ranker] Winner: {winner['name'][:60]}")
+        print(f"  🏆 Winner: {winner['name'][:60]}")
 
     result = {
         "ranked": [
@@ -90,6 +90,7 @@ def ranker_agent_node(state: Blackboard) -> dict:
                 "losses":            p["review_data"].get("losses", []),
                 "sentiment":         p["review_data"].get("sentiment", "neutral"),
                 "confidence":        p["review_data"].get("confidence", 0.3),
+                "_sources":          p["review_data"].get("_sources", {}),
             }
             for i, p in enumerate(ranked_products[:10])
         ],
@@ -114,6 +115,7 @@ def ranker_agent_node(state: Blackboard) -> dict:
             "confidence":        min(0.95, winner["combined_score"] / 100) if winner else 0.1,
             "product_image_url": _get_image(winner["name"], product_cache) if winner else None,
             "category_scores":   winner["review_data"].get("category_scores", {}) if winner else {},
+            "_sources":          winner["review_data"].get("_sources", {}) if winner else {},
         },
         "weights_used":    {"quality": q_w, "price": p_w, "availability": a_w},
         "methodology":     "Fixed weights: quality 80%, price 10%, availability 10%",
@@ -150,7 +152,9 @@ def comparison_ranker_node(state: Blackboard) -> dict:
             "sentiment":       rd.get("sentiment", "neutral"),
             "highlights":      rd.get("review_highlights", []),
             "confidence":      rd.get("confidence", 0.3),
-            "category_scores": rd.get("category_scores", {}),
+            "category_scores":   rd.get("category_scores", {}),
+            "_sources":          rd.get("_sources", {}),
+            "product_image_url": _get_image(product, opinions.get("search_agent", {}).get("product_cache", {})),
         })
 
     comparison_table.sort(key=lambda x: x["quality"], reverse=True)

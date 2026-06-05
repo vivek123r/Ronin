@@ -139,6 +139,20 @@ def _review_product(product: str, product_cache: dict) -> tuple:
         print(f"     ⚠️  JSON parse failed -- fallback 50/100")
 
     print(f"     ✅ Rating: {result.get('rating','?')}/100 | AMZ:{len(amazon_data.get('reviews',[]))} YT:{len(youtube_data)} RDT:{len(reddit_data)}")
+
+    # Surface raw source metadata to frontend
+    yt_meta = [{"title": v.get("title",""), "channel": v.get("channel",""), "url": v.get("url",""), "video_id": v.get("video_id","")} for v in (youtube_data or [])]
+    rdt_meta = [{"title": p.get("title",""), "subreddit": p.get("subreddit",""), "url": p.get("url",""), "body_snippet": (p.get("body","") or "")[:200]} for p in (reddit_data or [])]
+    amz_meta = {
+        "avg_rating": amazon_data.get("avg_rating", ""),
+        "num_ratings": amazon_data.get("num_ratings", "0"),
+        "rating_distribution": amazon_data.get("rating_distribution", {}),
+        "review_count": len(amazon_data.get("reviews", [])),
+        "verified_reviews": [r for r in amazon_data.get("reviews", []) if r.get("verified")],
+        "top_reviews": [{"stars": r.get("stars",""), "title": r.get("title",""), "body": (r.get("body","") or "")[:250], "verified": r.get("verified", False)} for r in (amazon_data.get("reviews", []) or [])[:5]],
+    }
+    result["_sources"] = {"youtube": yt_meta, "reddit": rdt_meta, "amazon": amz_meta}
+
     return product, result
 
 
@@ -174,6 +188,7 @@ def review_agent_node(state: Blackboard) -> dict:
                     "rating": 50, "benefits": [], "losses": ["Review fetch failed"],
                     "sentiment": "neutral", "confidence": 0.2, "review_highlights": [],
                     "category_scores": {"Quality": 50, "Value": 50, "Features": 50, "Durability": 50},
+                    "_sources": {"youtube": [], "reddit": [], "amazon": {"avg_rating": "?", "num_ratings": "0", "rating_distribution": {}, "review_count": 0, "verified_reviews": [], "top_reviews": []}},
                 }
 
     avg_confidence = (

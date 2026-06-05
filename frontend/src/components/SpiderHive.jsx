@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import SignalParticles from './SignalParticles'
 
 /* ─── Tiny colored spider SVG ──────────────────────────────────────────── */
 function SpiderIcon({ color = '#e63946', size = 20 }) {
@@ -1373,7 +1374,9 @@ export default function SpiderHive({ progress, query, resultReady, onComplete })
 
         {/* Center — canvas + overlays */}
         <div style={{ flex:1, position:'relative', overflow:'hidden' }}>
+          <SignalParticles />
           <HiveCanvas agents={agents} phase={phase} resultReady={resultReady} onComplete={onComplete} />
+          
 
           {/* Phase label */}
           <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%, calc(-50% + 110px))', textAlign:'center', pointerEvents:'none', zIndex:5 }}>

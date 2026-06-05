@@ -83,14 +83,14 @@ export function ProductDNA({ categoryScores, colorIndex = 0, label = '', size = 
         {ringVals.map((r, i) => (
           <polygon key={i}
             points={endpoints.map(ep => `${ep.x * r + cx * (1 - r)},${ep.y * r + cy * (1 - r)}`).join(' ')}
-            fill="none" stroke="rgba(220,20,60,0.08)" strokeWidth="0.8"
+            fill="none" stroke="rgba(220,20,60,0.10)" strokeWidth="1.0"
           />
         ))}
 
         {/* Axis lines */}
         {endpoints.map((ep, i) => (
           <line key={i} x1={cx} y1={cy} x2={ep.x} y2={ep.y}
-            stroke="rgba(220,20,60,0.12)" strokeWidth="0.8"
+            stroke="rgba(220,20,60,0.14)" strokeWidth="1.0"
           />
         ))}
 
@@ -103,7 +103,7 @@ export function ProductDNA({ categoryScores, colorIndex = 0, label = '', size = 
           return (
             <text key={i} x={lp.x} y={lp.y}
               textAnchor={anchor} dominantBaseline="middle"
-              fill="rgba(220,20,60,0.45)" fontSize="9" fontFamily="monospace" fontWeight="700"
+              fill="rgba(220,20,60,0.55)" fontSize="12" fontFamily="monospace" fontWeight="700"
               letterSpacing="0.04em"
             >
               {displayName}
@@ -140,7 +140,7 @@ export function ProductDNA({ categoryScores, colorIndex = 0, label = '', size = 
               />
               <motion.text x={scoreX.x} y={scoreX.y}
                 textAnchor="middle" dominantBaseline="middle"
-                fill={colors.stroke} fontSize="9" fontFamily="Space Grotesk, sans-serif" fontWeight="800"
+                fill={colors.stroke} fontSize="12" fontFamily="Space Grotesk, sans-serif" fontWeight="800"
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 transition={{ delay: 0.6 + i * 0.06, duration: 0.2 }}
               >
@@ -198,12 +198,12 @@ export function MultiDNA({ products, size = 280 }) {
         {ringVals.map((r, i) => (
           <polygon key={i}
             points={endpoints.map(ep => `${ep.x * r + cx * (1 - r)},${ep.y * r + cy * (1 - r)}`).join(' ')}
-            fill="none" stroke="rgba(220,20,60,0.08)" strokeWidth="0.8"
+            fill="none" stroke="rgba(220,20,60,0.10)" strokeWidth="1.0"
           />
         ))}
         {endpoints.map((ep, i) => (
           <line key={i} x1={cx} y1={cy} x2={ep.x} y2={ep.y}
-            stroke="rgba(220,20,60,0.12)" strokeWidth="0.8"
+            stroke="rgba(220,20,60,0.14)" strokeWidth="1.0"
           />
         ))}
         {axes.map((a, i) => {
@@ -212,7 +212,7 @@ export function MultiDNA({ products, size = 280 }) {
           return (
             <text key={i} x={lp.x} y={lp.y}
               textAnchor={anchor} dominantBaseline="middle"
-              fill="rgba(220,20,60,0.45)" fontSize="9" fontFamily="monospace" fontWeight="700"
+              fill="rgba(220,20,60,0.55)" fontSize="12" fontFamily="monospace" fontWeight="700"
               letterSpacing="0.04em"
             >
               {a.name}
@@ -257,7 +257,7 @@ export function MultiDNA({ products, size = 280 }) {
             <div key={pidx} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: colors.stroke,
                 boxShadow: `0 0 4px ${colors.glow}` }} />
-              <span style={{ fontSize: 9, color: '#94a3b8', fontFamily: 'monospace' }}>{name}</span>
+              <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{name}</span>
             </div>
           )
         })}
@@ -306,7 +306,7 @@ export default function RadarChart({ categoryScores, products, winner, ranked })
 
   return (
     <div style={{ padding: '20px 16px', background: 'rgba(8,0,0,0.6)', border: '1px solid rgba(220,20,60,0.12)', borderRadius: 14, backdropFilter: 'blur(10px)' }}>
-      <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(220,20,60,0.6)', marginBottom: 12, fontFamily: 'monospace', fontWeight: 700 }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.2em', color: 'rgba(220,20,60,0.6)', marginBottom: 12, fontFamily: 'monospace', fontWeight: 700 }}>
         ◈ DNA PROFILE
       </div>
       <ProductDNA categoryScores={scores} label="" size={260} />
