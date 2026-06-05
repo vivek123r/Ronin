@@ -55,7 +55,14 @@ if os.path.exists(wallpaper_src) and not os.path.exists(wallpaper_dst):
     import shutil
     shutil.copy2(wallpaper_src, wallpaper_dst)
 
-app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+# Serve static files (CSS, JS, etc.)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+@app.get("/")
+async def root():
+    """Serve the React app"""
+    return FileResponse(os.path.join(static_dir, "index.html"))
 
 
 def sse_event(data: dict) -> str:
@@ -290,6 +297,15 @@ async def chat(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
         _rc.clear_config()
+
+
+@app.get("/{full_path:path}")
+async def catch_all(full_path: str):
+    """Serve index.html for any unmatched routes (for React Router compatibility)"""
+    index_file = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return JSONResponse({"error": "Not found"}, status_code=404)
 
 
 if __name__ == "__main__":
