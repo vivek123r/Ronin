@@ -1,3 +1,6 @@
+fastapi
+uvicorn
+requests
 langchain-openai
 langchain-core
 langchain-community
