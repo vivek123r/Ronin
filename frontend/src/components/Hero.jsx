@@ -38,10 +38,6 @@ export default function Hero({ onSearch, status, progress }) {
       style={{
         minHeight: '100vh',
         width: '100%',
-        backgroundImage: "url('/static/samurai.jpg')",
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
         position: 'relative',
         display: 'flex',
         alignItems: 'center',

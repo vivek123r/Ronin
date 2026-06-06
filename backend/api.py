@@ -49,11 +49,6 @@ app.add_middleware(
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 os.makedirs(static_dir, exist_ok=True)
 
-wallpaper_src = r"C:\Users\vivek\Downloads\samurai-warrior-night-by-lake.jpg"
-wallpaper_dst = os.path.join(static_dir, "samurai.jpg")
-if os.path.exists(wallpaper_src) and not os.path.exists(wallpaper_dst):
-    import shutil
-    shutil.copy2(wallpaper_src, wallpaper_dst)
 
 # Serve static files (CSS, JS, etc.)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -310,4 +305,4 @@ async def catch_all(full_path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.api:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("backend.api:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=False)
