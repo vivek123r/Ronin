@@ -760,6 +760,7 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
   const [compareUrls, setCompareUrls] = useState(['', ''])
   const [searchMode, setSearchMode] = useState('research') // 'find' | 'compare' | 'research'
   const [configWarning, setConfigWarning] = useState(false)
+  const [serverHasDefaults, setServerHasDefaults] = useState(false)
   const [urlError, setUrlError] = useState('')
   const typingText = useTypingEffect(TYPING_QUERIES)
   const progressRef = useRef(null)
@@ -774,7 +775,12 @@ export default function LandingPage({ onSearch, status, progress, onHistoryToggl
     }
   }, [progress])
 
+  useEffect(() => {
+    fetch('/config-status').then(r => r.json()).then(d => setServerHasDefaults(!!d.has_defaults)).catch(() => {})
+  }, [])
+
   function isConfigured() {
+    if (serverHasDefaults) return true
     const cfg = loadConfig()
     return !!(cfg.LLM_API_KEY?.trim() && cfg.RAPIDAPI_KEY?.trim())
   }

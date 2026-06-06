@@ -241,6 +241,14 @@ async def get_providers():
     ])
 
 
+@app.get("/config-status")
+async def config_status():
+    """Tell the frontend whether the server has default API keys configured."""
+    return JSONResponse({
+        "has_defaults": bool(os.getenv("RAPIDAPI_KEY") and os.getenv("LLM_API_KEY") or os.getenv("OPENROUTER_API_KEY"))
+    })
+
+
 @app.get("/history")
 async def get_history():
     return JSONResponse(list(history))
