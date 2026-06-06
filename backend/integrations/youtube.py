@@ -4,7 +4,8 @@ from backend.utils.request_config import get
 
 def search_youtube(query: str, max_results: int = 2) -> list:
     """Search YouTube and fetch transcripts."""
-    from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
     videos = []
     try:
         resp = requests.get(
@@ -32,8 +33,9 @@ def search_youtube(query: str, max_results: int = 2) -> list:
 
             transcript_text = ""
             try:
-                raw = YouTubeTranscriptApi.get_transcript(vid_id, languages=["en", "en-US", "en-GB"])
-                transcript_text = " ".join(seg["text"] for seg in raw[:120])
+                fetched = YouTubeTranscriptApi().fetch(vid_id, languages=["en", "en-US", "en-GB", "hi"])
+                raw = list(fetched)
+                transcript_text = " ".join(seg.text for seg in raw[:120])
             except (NoTranscriptFound, TranscriptsDisabled):
                 transcript_text = "[No transcript available]"
             except Exception as e:
